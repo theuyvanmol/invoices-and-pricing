@@ -14,9 +14,8 @@ export async function GET(request) {
   if (!sql) return json({ needsSetup: false, role: null, features: features(), error: 'NO_DB' });
   try {
     const s = await getSettings();
-    if (!s) return json({ needsSetup: true, role: null, features: features() });
     const role = await getRole(request, s);
-    return json({ needsSetup: false, role, settings: role ? publicSettings(s) : { restaurant: s.restaurant || '' }, features: features() });
+    return json({ needsSetup: false, role, settings: role ? publicSettings(s) : { restaurant: s.restaurant || '', pinsEnabled: true }, features: features() });
   } catch (e) {
     console.error(e);
     return fail('Could not reach the database.', 503);
@@ -31,12 +30,13 @@ export async function POST(request) {
     const s = await getSettings();
 
     if (body.action === 'setup') {
-      if (s) return fail('This app is already set up. Sign in instead.', 409);
+      if (s && s.pinsEnabled) return fail('PIN sign-in is already set up. Sign in instead.', 409);
       if (!pinOk(body.ownerPin) || !pinOk(body.managerPin)) return fail('PINs must be 4 to 8 digits.');
       if (body.ownerPin === body.managerPin) return fail('The owner PIN and manager PIN must be different.');
       const data = {
         restaurant: String(body.restaurant || '').slice(0, 80),
-        currency: String(body.currency || '£').slice(0, 5),
+        currency: '£',
+        pinsEnabled: true,
         threshold: 0,
         alertEmail: String(body.alertEmail || '').slice(0, 200),
         ownerHash: hashPin(body.ownerPin),
@@ -70,6 +70,8 @@ export async function POST(request) {
       const role = await getRole(request, s);
       if (role !== 'owner') return fail('Only the owner can change PINs.', 403);
       const next = { ...s };
+      if (!s.pinsEnabled && (!body.ownerPin || !body.managerPin)) return fail('Choose both an owner PIN and a manager PIN to turn on sign-in.');
+      next.pinsEnabled = true;
       if (body.ownerPin) { if (!pinOk(body.ownerPin)) return fail('PINs must be 4 to 8 digits.'); next.ownerHash = hashPin(body.ownerPin); }
       if (body.managerPin) { if (!pinOk(body.managerPin)) return fail('PINs must be 4 to 8 digits.'); next.managerHash = hashPin(body.managerPin); }
       if (body.ownerPin && body.managerPin && body.ownerPin === body.managerPin) return fail('The owner PIN and manager PIN must be different.');

@@ -30,10 +30,15 @@ export async function ensureSchema() {
   schemaReady = true;
 }
 
+export const RESTAURANT = 'Geisha Restaurant';
+// Settings are created automatically. PIN sign-in stays off until the owner turns it on in Settings.
 export async function getSettings() {
   await ensureSchema();
   const rows = await sql`select data from settings where id = 1`;
-  return rows[0]?.data || null;
+  if (rows[0]?.data) return rows[0].data;
+  const data = { restaurant: RESTAURANT, currency: '£', threshold: 0, alertEmail: '', pinsEnabled: false, secret: crypto.randomBytes(32).toString('hex') };
+  await saveSettings(data);
+  return data;
 }
 export async function saveSettings(data) {
   await sql`insert into settings (id, data) values (1, ${JSON.stringify(data)}::jsonb) on conflict (id) do update set data = excluded.data`;
@@ -63,6 +68,7 @@ export const clearSession = () => `${COOKIE}=; Path=/; HttpOnly; Secure; SameSit
 
 export async function getRole(request, settings) {
   settings = settings || (await getSettings());
+  if (!settings?.pinsEnabled) return 'owner';
   if (!settings?.secret) return null;
   const raw = (request.headers.get('cookie') || '').split(/;\s*/).find((c) => c.startsWith(COOKIE + '='));
   if (!raw) return null;
@@ -99,5 +105,5 @@ export function route(handler, { needs = 'any' } = {}) {
 
 export function publicSettings(s) {
   if (!s) return null;
-  return { restaurant: s.restaurant || '', currency: s.currency || '£', threshold: Number(s.threshold || 0), alertEmail: s.alertEmail || '' };
+  return { restaurant: s.restaurant || RESTAURANT, currency: '£', threshold: Number(s.threshold || 0), alertEmail: s.alertEmail || '', pinsEnabled: !!s.pinsEnabled };
 }

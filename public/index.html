@@ -342,13 +342,13 @@ const VIEWS={home:'Overview',products:'Products & prices',compare:'Compare suppl
 const SUBS={home:'Everything you are paying, updated from every invoice your managers scan.',products:'Latest and previous price for every product from every supplier.',compare:'The same product from different suppliers, cheapest first.',scan:'Take a photo of the invoice. Claude reads it and you check before saving.',alerts:'Every price increase found on an invoice, waiting for your review.',invoices:'Every scanned invoice with its photo, searchable by supplier and number.',suppliers:'Who you buy from and how their prices are moving.',settings:'Alert rules, email, PINs and how your team uses the app.'};
 
 /* ---------- state ---------- */
-const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'',alertEmail:''},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
+const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'Geisha Restaurant',alertEmail:'',pinsEnabled:false},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
 const isOwner=()=>S.role==='owner';
 const UI={pq:'',psup:'all',pfilter:'all',psort:'name',iq:'',isup:'all',afilter:'open',cq:''};
 let scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};
 const MAX_PAGES=5;
 
-const cur=()=>S.settings.currency||'£';
+const cur=()=>'£';
 const money=n=>{const v=Number(n||0);return (v<0?'−':'')+cur()+Math.abs(v).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const supName=id=>S.sup.find(s=>s.id===id)?.name||'Unknown supplier';
 const sortedHist=p=>[...(p.history||[])].sort((a,b)=>(a.d||'').localeCompare(b.d||'')||(a.t||0)-(b.t||0));
@@ -398,10 +398,10 @@ function showGate(msg=''){
   <form id="setupForm"><label class="fl"><span>Restaurant name</span><input class="field" id="suRest" autocomplete="organization" required maxlength="80"></label>
   <label class="fl"><span>Owner PIN (4–8 digits)</span><input class="field mono" id="suOwner" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" type="password" required></label>
   <label class="fl"><span>Manager PIN (4–8 digits)</span><input class="field mono" id="suMgr" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="off" required></label>
-  <label class="fl"><span>Currency</span><select class="field" id="suCur">${['£','€','$','฿','A$'].map(c=>`<option>${c}</option>`).join('')}</select></label>
+  
   <label class="fl"><span>Email for price alerts (optional)</span><input class="field" id="suEmail" type="email" autocomplete="email"></label>
   <div class="err" id="gateErr">${esc(msg)}</div><button class="btn primary" type="submit">Create app</button></form></div>`;
-  $('#setupForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/session',{method:'POST',body:{action:'setup',restaurant:$('#suRest').value,ownerPin:$('#suOwner').value,managerPin:$('#suMgr').value,currency:$('#suCur').value,alertEmail:$('#suEmail').value}});S.needsSetup=false;S.role='owner';hideGate();toast('Your app is ready. Scan the first invoice.');load()}catch(err){$('#gateErr').textContent=err.message}};
+  $('#setupForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/session',{method:'POST',body:{action:'setup',restaurant:$('#suRest').value,ownerPin:$('#suOwner').value,managerPin:$('#suMgr').value,alertEmail:$('#suEmail').value}});S.needsSetup=false;S.role='owner';hideGate();toast('Your app is ready. Scan the first invoice.');load()}catch(err){$('#gateErr').textContent=err.message}};
   return}
   pin='';
   g.innerHTML=`<div class="gate-card">${gateBrand()}<h1>Enter your PIN</h1><p>Owner or manager PIN</p><div class="pinrow" id="pinDots"></div><div class="err" id="gateErr">${esc(msg)}</div>
@@ -441,8 +441,8 @@ function renderNav(){
   const tabs=[['home','Home'],['products','Prices'],['scan','Scan'],['alerts','Alerts'],['invoices','Invoices']];
   $('#tabbar').innerHTML=tabs.map(([k,l])=>k==='scan'?`<button class="tab scan ${v===k?'on':''}" data-go="scan" aria-label="Scan invoice"><span class="fab">${I.scan}</span>${l}</button>`:`<button class="tab ${v===k?'on':''}" data-go="${k}">${I[k]}${l}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
   const role=isOwner()?'Owner':'Manager';
-  $('#sideFoot').innerHTML=S.role?`Signed in as <b>${role}</b> · <button class="btn ghost sm" data-act="signout" style="min-height:28px;padding:0 6px">Sign out</button><br>${S.prod.length} products · ${S.inv.length} invoices`:'';
-  $('#sideRest').textContent=S.settings.restaurant||'Supplier price control';
+  $('#sideFoot').innerHTML=S.role&&!S.settings.pinsEnabled?`${esc(S.settings.restaurant)}<br>${S.prod.length} products · ${S.inv.length} invoices`:S.role?`Signed in as <b>${role}</b> · <button class="btn ghost sm" data-act="signout" style="min-height:28px;padding:0 6px">Sign out</button><br>${S.prod.length} products · ${S.inv.length} invoices`:'';
+  $('#sideRest').textContent=S.settings.restaurant||'Geisha Restaurant';
 }
 
 function head(v,extra=''){return `<div class="pagehead"><div><h1>${esc(VIEWS[v])}</h1><p>${esc(SUBS[v])}</p></div>${extra}</div>`}
@@ -568,10 +568,9 @@ function vSettings(){
     <div class="setrow"><div><b>Restaurant name</b><p class="small muted">Shown on the sign-in screen.</p></div><input class="field" id="setRest" value="${esc(S.settings.restaurant||'')}" ${ro?'disabled':''}></div>
     <div class="setrow"><div><b>Alert when a price rises by at least</b><p class="small muted">0% alerts on every increase, even 1p.</p></div><div style="display:flex;gap:8px;align-items:center"><input class="field mono" id="setThr" type="number" min="0" max="100" step="0.5" value="${num(S.settings.threshold)}" ${ro?'disabled':''} style="max-width:110px"><span>%</span></div></div>
     <div class="setrow"><div><b>Email price alerts to</b><p class="small muted">${f.email?'Sent as soon as an invoice with a price increase is saved.':'Email sending is not switched on yet (see setup notes).'} Separate several addresses with commas.</p></div><input class="field" id="setEmail" type="email" multiple value="${esc(S.settings.alertEmail||'')}" placeholder="owner@restaurant.com" ${ro?'disabled':''}></div>
-    <div class="setrow"><div><b>Currency</b></div><select class="field" id="setCur" ${ro?'disabled':''}>${['£','€','$','฿','A$'].map(c=>`<option value="${esc(c)}" ${cur()===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
     ${ro?'':'<div class="savebar"><button class="btn primary" data-act="saveSettings">Save settings</button></div>'}
   </div></section>
-  ${ro?'':`<section class="panel"><div class="panel-h"><h2>PINs</h2></div><div class="panel-b"><p class="small muted" style="margin-bottom:10px">Changing a PIN signs everyone else out. Leave a field empty to keep that PIN.</p><div class="form2" style="grid-template-columns:1fr 1fr"><label class="fl"><span>New owner PIN</span><input class="field mono" id="newOwnerPin" inputmode="numeric" type="password" autocomplete="new-password"></label><label class="fl"><span>New manager PIN</span><input class="field mono" id="newMgrPin" inputmode="numeric" autocomplete="off"></label></div><div class="savebar"><button class="btn" data-act="savePins">Change PINs</button></div></div></section>`}
+  ${ro?'':`<section class="panel"><div class="panel-h"><h2>Sign-in with PINs</h2>${S.settings.pinsEnabled?'<span class="pill down">On</span>':'<span class="pill warn">Off</span>'}</div><div class="panel-b"><p class="small muted" style="margin-bottom:10px">${S.settings.pinsEnabled?'Changing a PIN signs everyone else out. Leave a field empty to keep that PIN.':'Right now anyone with the link can use the app. Choose an owner PIN and a manager PIN to require sign-in.'}</p><div class="form2" style="grid-template-columns:1fr 1fr"><label class="fl"><span>New owner PIN</span><input class="field mono" id="newOwnerPin" inputmode="numeric" type="password" autocomplete="new-password"></label><label class="fl"><span>New manager PIN</span><input class="field mono" id="newMgrPin" inputmode="numeric" autocomplete="off"></label></div><div class="savebar"><button class="btn" data-act="savePins">${S.settings.pinsEnabled?'Change PINs':'Turn on PIN sign-in'}</button></div></div></section>`}
   </div>
   <div class="stack"><section class="panel"><div class="panel-h"><h2>How your team uses it</h2></div><div class="panel-b"><ol class="howto">
     <li><span>Send your managers this website address and the <b>manager PIN</b>.</span></li>
@@ -582,7 +581,7 @@ function vSettings(){
   <section class="panel"><div class="panel-h"><h2>System status</h2></div><div class="panel-b rows" style="padding:0 0 6px">
     ${[['Database',true],['Invoice photos',f.photos],['Automatic reading',f.ai],['Email alerts',f.email]].map(([l,ok])=>`<div class="row" style="padding-inline:18px"><span class="t">${l}</span><span class="r">${ok?'<span class="pill down">On</span>':'<span class="pill warn">Not set up</span>'}</span></div>`).join('')}
   </div></section>
-  <button class="btn" data-act="signout">Sign out</button></div></div>`;
+  ${S.settings.pinsEnabled?'<button class="btn" data-act="signout">Sign out</button>':''}</div></div>`;
   return h;
 }
 
@@ -810,8 +809,8 @@ document.addEventListener('click',async e=>{
   else if(a==='resetScan'){scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
   else if(a==='addLine'){scan.draft.lines.push({name:'',unit:'kg',qty:'1',price:''});lastView=null;render();const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[ins.length-1]?.focus()}
   else if(a==='save')saveInvoice();
-  else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),currency:$('#setCur').value,restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
-  else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});toast('PINs changed. Tell your managers the new PIN.');$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
+  else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
+  else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});S.settings.pinsEnabled=true;toast('PIN sign-in is on. Tell your managers the manager PIN.');render();$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
   else if(a==='signout')signOut();
 });
 document.addEventListener('keydown',e=>{
