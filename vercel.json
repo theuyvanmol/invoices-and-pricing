@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "public",
+  "functions": {
+    "api/read.js": { "maxDuration": 60 },
+    "api/invoices.js": { "maxDuration": 30 }
+  },
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "same-origin" },
+      { "key": "Permissions-Policy", "value": "camera=(self)" }
+    ] }
+  ]
+}

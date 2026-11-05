@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d5c7a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Invoices">
+<meta name="description" content="Scan supplier invoices and track every price your restaurant pays.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>Invoices &amp; Pricing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,750&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: desktop = slim sidebar + content column; phone = top bar + content + fixed bottom tab bar with a raised Scan button. */
+:root{
+  --bg:#f3f4f1; --surface:#ffffff; --surface-2:#eceeea; --line:#dfe2dc; --ink:#18201d; --ink-2:#4b5651; --muted:#76817b;
+  --accent:#1d5c7a; --accent-ink:#ffffff; --accent-soft:#e2edf2;
+  --up:#c23f2a; --up-soft:#fbe9e5; --down:#2c7a4b; --down-soft:#e3f2e8; --warn:#9a6512; --warn-soft:#fbf0dc;
+  --shadow:0 1px 2px rgba(24,32,29,.06),0 6px 22px rgba(24,32,29,.06);
+  --f-display:"Bricolage Grotesque","Avenir Next","Segoe UI",system-ui,sans-serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:14px; --tab-h:64px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111513; --surface:#191e1c; --surface-2:#222826; --line:#2e3532; --ink:#eef1ee; --ink-2:#bcc5c0; --muted:#8c9791;
+  --accent:#6fb3d4; --accent-ink:#0d1a21; --accent-soft:#1b2d36;
+  --up:#ff8a74; --up-soft:#3a1f1a; --down:#74c995; --down-soft:#1a2f22; --warn:#e7b25a; --warn-soft:#33281a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513; --surface:#191e1c; --surface-2:#222826; --line:#2e3532; --ink:#eef1ee; --ink-2:#bcc5c0; --muted:#8c9791;
+  --accent:#6fb3d4; --accent-ink:#0d1a21; --accent-soft:#1b2d36;
+  --up:#ff8a74; --up-soft:#3a1f1a; --down:#74c995; --down-soft:#1a2f22; --warn:#e7b25a; --warn-soft:#33281a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 22px rgba(0,0,0,.25); color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}body{margin:0}img{max-width:100%}[hidden]{display:none!important}
+html{padding-bottom:0}
+html,body{background:var(--bg)}
+body{color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+h1,h2,h3{font-family:var(--f-display);letter-spacing:-.02em;text-wrap:balance;margin:0}
+h1{font-size:clamp(24px,3.4vw,32px);font-weight:750}
+h2{font-size:19px;font-weight:700}
+h3{font-size:16px;font-weight:700}
+p{margin:0}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+/* Shell */
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px;padding:22px 14px;border-right:1px solid var(--line);background:var(--surface)}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px}
+.brand-mark{width:34px;height:34px;border-radius:9px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-family:var(--f-mono);font-weight:600;font-size:13px}
+.brand b{font-family:var(--f-display);font-size:17px;line-height:1.05;display:block}
+.brand small{color:var(--muted);font-size:12px}
+.navbtn{display:flex;align-items:center;gap:11px;width:100%;padding:10px 11px;border:0;border-radius:10px;background:none;text-align:left;color:var(--ink-2);font-weight:600}
+.navbtn:hover{background:var(--surface-2)}
+.navbtn.on{background:var(--accent-soft);color:var(--ink)}
+.navbtn svg{width:20px;height:20px;flex:none}
+.navbtn .count{margin-left:auto}
+.side .scanbig{margin:8px 0 14px}
+.side-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+main{min-width:0;padding-block:28px 60px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px));max-width:1180px;width:100%}
+.topbar{display:none}
+.tabbar{display:none}
+.pagehead{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.pagehead p{color:var(--muted);margin-top:4px}
+
+/* Buttons & fields */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:11px;border:1px solid var(--line);background:var(--surface);font-weight:650;color:var(--ink)}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--up);border-color:var(--up-soft)}
+.btn.ghost{border-color:transparent;background:none}
+.btn.sm{min-height:36px;padding:0 12px;font-size:13px;border-radius:9px}
+.btn[disabled]{opacity:.5;pointer-events:none}
+.btn svg{width:18px;height:18px}
+.field{width:100%;min-width:0;max-width:100%;min-height:44px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.field:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+select.field{appearance:auto}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.toolbar .search{flex:1 1 220px;min-width:0}
+.toolbar select{flex:0 1 200px;width:auto}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:7px 13px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* Pills */
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:99px;padding:3px 9px;font-size:12px;font-weight:700;white-space:nowrap;font-family:var(--f-mono)}
+.pill.up{background:var(--up-soft);color:var(--up)}
+.pill.down{background:var(--down-soft);color:var(--down)}
+.pill.flat{background:var(--surface-2);color:var(--muted)}
+.pill.new{background:var(--accent-soft);color:var(--accent)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.count{min-width:22px;height:22px;border-radius:99px;background:var(--up);color:#fff;font-size:12px;font-weight:700;display:inline-grid;place-items:center;padding:0 6px;font-family:var(--f-mono)}
+
+/* Panels */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.panel-h{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:16px 18px 10px}
+.panel-b{padding:0 18px 18px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px}
+.stack{display:grid;gap:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.kpi{padding:14px 16px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);text-align:left}
+.kpi .v{display:block;font-family:var(--f-mono);font-size:24px;font-weight:600;margin-top:6px;letter-spacing:-.02em}
+.kpi small{color:var(--muted);font-size:12px}
+.kpi.alert .v{color:var(--up)}
+button.kpi{cursor:pointer;color:inherit}
+button.kpi:hover{border-color:var(--accent)}
+
+.banner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 16px;border-radius:var(--r);margin-bottom:16px;border:1px solid var(--line);background:var(--surface)}
+.banner.alert{background:var(--up-soft);border-color:transparent}
+.banner.alert b{color:var(--up)}
+.banner.info{background:var(--accent-soft);border-color:transparent}
+.banner .grow{flex:1 1 220px;min-width:0}
+
+/* Rows */
+.rows{display:grid}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;width:100%;color:inherit}
+.row:first-child{border-top:0}
+button.row:hover{background:var(--surface-2)}
+.row .t{font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .s{color:var(--muted);font-size:13px;min-width:0}
+.row .r{text-align:right}
+.price{font-family:var(--f-mono);font-weight:600;font-variant-numeric:tabular-nums}
+.price small{font-weight:400;color:var(--muted);font-size:12px}
+
+/* Product table (desktop) */
+.tablewrap{overflow-x:auto}
+table.list{width:100%;border-collapse:collapse}
+table.list th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.list td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.list tr:last-child td{border-bottom:0}
+table.list tbody tr{cursor:pointer}
+table.list tbody tr:hover{background:var(--surface-2)}
+table.list .num{text-align:right;white-space:nowrap}
+.cards{display:none}
+
+/* Alerts */
+.alertcard{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 16px;padding:16px 18px;border-top:1px solid var(--line)}
+.alertcard:first-child{border-top:0}
+.alertcard .big{font-family:var(--f-mono);font-size:20px;font-weight:600;color:var(--up);text-align:right}
+.alertcard .acts{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+.alertcard.done .big{color:var(--muted)}
+.fromto{font-family:var(--f-mono);font-size:14px;margin-top:4px}
+.fromto s{color:var(--muted)}
+.note{margin-top:6px;font-size:13px;color:var(--ink-2);background:var(--surface-2);padding:8px 10px;border-radius:8px}
+
+/* Bars & charts */
+.chart{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font-family:var(--f-mono);font-size:10px}
+.chart .grid{stroke:var(--line)}
+.chart .bar{fill:var(--accent);opacity:.82}
+.chart .bar.cur{opacity:1}
+.chart .ln{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.chart .ar{fill:var(--accent);opacity:.12}
+.chart .dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}
+.chart .dot.last{fill:var(--accent)}
+.share{display:grid;gap:12px}
+.share-l{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:5px}
+.meter{height:8px;border-radius:9px;background:var(--surface-2);overflow:hidden}
+.meter span{display:block;height:100%;background:var(--accent);border-radius:9px}
+
+/* Scan */
+.scan-hero{display:grid;gap:14px;padding:22px;text-align:center;justify-items:center}
+.cam{display:grid;place-items:center;gap:6px;width:100%;max-width:420px;padding:28px 16px;border-radius:18px;border:2px dashed var(--line);background:var(--surface-2);position:relative;cursor:pointer}
+.cam:hover{border-color:var(--accent)}
+.cam svg{width:44px;height:44px;color:var(--accent)}
+.cam input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.cam b{font-family:var(--f-display);font-size:19px}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;width:100%;max-width:520px}
+.thumb{position:relative;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line);max-width:100%}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:5px;right:5px;width:30px;height:30px;border-radius:99px;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:16px;line-height:1}
+.thumb .pg{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;border-radius:6px;padding:2px 6px;font-family:var(--f-mono)}
+.addpage{display:grid;place-items:center;aspect-ratio:3/4;border-radius:10px;border:2px dashed var(--line);color:var(--muted);font-size:13px;font-weight:600;position:relative;text-align:center;padding:6px}
+.addpage input{position:absolute;inset:0;opacity:0;width:100%}
+.steps{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.steps span{font-size:12px;font-weight:700;padding:5px 10px;border-radius:99px;background:var(--surface-2);color:var(--muted)}
+.steps span.on{background:var(--accent);color:var(--accent-ink)}
+.spinner{width:42px;height:42px;border-radius:50%;border:4px solid var(--accent-soft);border-top-color:var(--accent);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.reviewgrid{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px;align-items:start}
+.photostrip{display:grid;gap:10px}
+.photostrip img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+.form2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.fl{display:grid;gap:5px;min-width:0}
+.fl>span{font-size:12px;font-weight:700;color:var(--ink-2)}
+.line{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,.9fr) minmax(0,.8fr) minmax(0,1fr) 40px;gap:8px;padding:12px 0;border-top:1px solid var(--line);align-items:end}
+.line .cmp{grid-column:1/-1;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.line .x{min-height:44px;border:0;background:none;color:var(--muted);font-size:20px;border-radius:10px}
+.line .x:hover{background:var(--up-soft);color:var(--up)}
+.totals{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-top:14px;border-top:2px solid var(--ink);margin-top:4px}
+.totals .price{font-size:22px}
+.savebar{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:16px}
+.result{display:grid;gap:12px;justify-items:center;text-align:center;padding:28px 18px}
+.tick{width:58px;height:58px;border-radius:50%;background:var(--down-soft);color:var(--down);display:grid;place-items:center}
+.tick svg{width:30px;height:30px}
+
+/* Sheet */
+.sheet{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(10,16,14,.5);padding:16px}
+.sheet[hidden]{display:none}
+.sheet-card{background:var(--surface);color:var(--ink);width:min(720px,100%);max-height:88vh;overflow:auto;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:22px}
+.sheet-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.closex{width:40px;height:40px;border-radius:99px;border:1px solid var(--line);background:var(--surface);font-size:20px;flex:none}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.fact{background:var(--surface-2);border-radius:11px;padding:10px 12px}
+.fact b{display:block;font-family:var(--f-mono);font-size:17px;margin-top:3px}
+.invoice-photo{width:100%;border-radius:12px;border:1px solid var(--line);display:block;margin-bottom:10px}
+.empty{padding:36px 18px;text-align:center;color:var(--muted);display:grid;gap:10px;justify-items:center}
+.empty b{color:var(--ink);font-family:var(--f-display);font-size:17px}
+.toast{position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:var(--shadow);max-width:calc(100vw - 32px)}
+.toast[hidden]{display:none}
+.notice{font-size:13px;color:var(--ink-2);background:var(--surface-2);border-radius:10px;padding:10px 12px}
+.setrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,220px);gap:14px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}
+.setrow:first-child{border-top:0}
+.howto{display:grid;gap:10px;counter-reset:s;padding:0;margin:0;list-style:none}
+.howto li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start}
+.howto li::before{counter-increment:s;content:counter(s);width:26px;height:26px;border-radius:99px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:13px;font-family:var(--f-mono)}
+
+@media (max-width:1050px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.reviewgrid{grid-template-columns:minmax(0,1fr)}.photostrip{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
+@media (max-width:860px){
+  .app{display:block}
+  .side{display:none}
+  body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+  .topbar{display:flex;position:sticky;top:env(safe-area-inset-top,0px);z-index:20;align-items:center;justify-content:space-between;gap:10px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--surface);border-bottom:1px solid var(--line)}
+  .topbar .brand{padding:0}
+  .topbar .brand-mark{width:30px;height:30px;font-size:12px}
+  .iconbtn{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;position:relative}
+  .iconbtn svg{width:20px;height:20px}
+  main{padding-block:18px calc(var(--tab-h) + 34px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .pagehead{margin-bottom:16px}
+  .pagehead .hide-m{display:none}
+  .tabbar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+  .tab{height:var(--tab-h);border:0;background:none;display:grid;place-items:center;align-content:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted);position:relative}
+  .tab svg{width:22px;height:22px}
+  .tab.on{color:var(--accent)}
+  .tab .count{position:absolute;top:6px;left:calc(50% + 4px);height:18px;min-width:18px;font-size:10px}
+  .tab.scan{color:var(--ink)}
+  .tab.scan .fab{width:58px;height:58px;margin-top:-26px;border-radius:18px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 8px 20px rgba(29,92,122,.35);border:4px solid var(--surface)}
+  .tab.scan .fab svg{width:26px;height:26px}
+  .kpi .v{font-size:20px}
+  .table-d{display:none}
+  .cards{display:grid}
+  .form2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .form2 .fl:first-child{grid-column:1/-1}
+  .line{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,.6fr) minmax(0,.6fr)}
+  .line .nm{grid-column:1/4;grid-row:1}
+  .line .x{grid-row:1;grid-column:4;justify-self:end;width:44px}
+  .line .fl:nth-child(4){grid-column:3/5}
+  .sheet{align-items:flex-end;padding:0}
+  .sheet-card{border-radius:20px 20px 0 0;max-height:92vh;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+  .facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .fact b{font-size:14px}
+  .setrow{grid-template-columns:minmax(0,1fr)}
+  .toast{bottom:calc(var(--tab-h) + 16px + env(safe-area-inset-bottom,0px))}
+  .savebar .btn{flex:1 1 auto}
+}
+@media (max-width:420px){.kpis{gap:8px}.kpi{padding:12px}.facts{grid-template-columns:1fr 1fr}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Sign-in */
+.gate{position:fixed;inset:0;z-index:80;background:var(--bg);display:grid;place-items:center;overflow:auto;padding-block:max(24px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.gate-card{width:min(400px,100%);display:grid;gap:16px}
+.gate-card .brand{padding:0;justify-content:center}
+.gate-card h1{text-align:center;font-size:26px}
+.gate-card p{text-align:center;color:var(--muted)}
+.pinrow{display:flex;justify-content:center;gap:12px;margin:6px 0}
+.pinrow span{width:16px;height:16px;border-radius:50%;border:2px solid var(--ink-2)}
+.pinrow span.on{background:var(--ink);border-color:var(--ink)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pad button{height:64px;border-radius:16px;border:1px solid var(--line);background:var(--surface);font-family:var(--f-mono);font-size:24px;font-weight:500;color:var(--ink)}
+.pad button:active{background:var(--surface-2)}
+.pad .ghostkey{border-color:transparent;background:none;font-family:var(--f-body);font-size:14px;font-weight:600;color:var(--muted)}
+.pad [data-key="ok"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.gate .err{color:var(--up);text-align:center;font-weight:600;min-height:20px}
+.gate form{display:grid;gap:12px}
+</style>
+</head>
+<body>
+<div class="gate" id="gate" hidden></div>
+
+<div class="app">
+  <aside class="side" aria-label="Main navigation">
+    <div class="brand"><div class="brand-mark">I&amp;P</div><div><b>Invoices &amp; Pricing</b><small id="sideRest">Supplier price control</small></div></div>
+    <button class="btn primary scanbig" data-go="scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>Scan invoice</button>
+    <nav id="sideNav"></nav>
+    <div class="side-foot" id="sideFoot">Connecting…</div>
+  </aside>
+  <div>
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">I&amp;P</div><div><b>Invoices &amp; Pricing</b></div></div>
+      <div style="display:flex;gap:8px">
+        <button class="iconbtn" data-go="suppliers" aria-label="Suppliers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/></svg></button>
+        <button class="iconbtn" data-go="settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      </div>
+    </header>
+    <main id="main"></main>
+  </div>
+</div>
+<nav class="tabbar" id="tabbar" aria-label="Main navigation"></nav>
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true"><div class="sheet-card" id="sheetCard"></div></div>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+<script>
+(()=>{
+'use strict';
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=s=>String(s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9ก-๙]+/g,' ').trim();
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const todayISO=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const fmtDate=iso=>{if(!iso)return '—';const d=new Date(iso+'T12:00:00');return isNaN(d)?esc(iso):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})};
+const fmtShort=iso=>{const d=new Date(iso+'T12:00:00');return isNaN(d)?iso:d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})};
+const num=v=>{const n=Number(String(v??'').replace(/[^0-9.\-]/g,''));return Number.isFinite(n)?n:0};
+const round2=n=>Math.round(n*100)/100;
+
+const I={
+ home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>',
+ products:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+ scan:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+ alerts:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+ invoices:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
+ suppliers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/></svg>',
+ compare:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-3 7a3.5 3.5 0 0 0 6 0z"/><path d="M19 7l-3 7a3.5 3.5 0 0 0 6 0z"/></svg>',
+ settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
+ gallery:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>',
+ check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>'
+};
+const VIEWS={home:'Overview',products:'Products & prices',compare:'Compare suppliers',scan:'Scan invoice',alerts:'Price alerts',invoices:'Invoices',suppliers:'Suppliers',settings:'Settings'};
+const SUBS={home:'Everything you are paying, updated from every invoice your managers scan.',products:'Latest and previous price for every product from every supplier.',compare:'The same product from different suppliers, cheapest first.',scan:'Take a photo of the invoice. Claude reads it and you check before saving.',alerts:'Every price increase found on an invoice, waiting for your review.',invoices:'Every scanned invoice with its photo, searchable by supplier and number.',suppliers:'Who you buy from and how their prices are moving.',settings:'Alert rules, email, PINs and how your team uses the app.'};
+
+/* ---------- state ---------- */
+const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'',alertEmail:''},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
+const isOwner=()=>S.role==='owner';
+const UI={pq:'',psup:'all',pfilter:'all',psort:'name',iq:'',isup:'all',afilter:'open',cq:''};
+let scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};
+const MAX_PAGES=5;
+
+const cur=()=>S.settings.currency||'£';
+const money=n=>{const v=Number(n||0);return (v<0?'−':'')+cur()+Math.abs(v).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})};
+const supName=id=>S.sup.find(s=>s.id===id)?.name||'Unknown supplier';
+const sortedHist=p=>[...(p.history||[])].sort((a,b)=>(a.d||'').localeCompare(b.d||'')||(a.t||0)-(b.t||0));
+const latest=p=>{const h=sortedHist(p);return h.length?h[h.length-1]:null};
+const previous=p=>{const h=sortedHist(p);return h.length>1?h[h.length-2]:null};
+const change=p=>{const l=latest(p),pr=previous(p);if(!l||!pr||!pr.p)return null;const d=round2(l.p-pr.p);return {diff:d,pct:d/pr.p*100}};
+const openAlerts=()=>S.alerts.filter(a=>a.status!=='reviewed');
+const view=()=>{const v=(location.hash||'').slice(1);return VIEWS[v]?v:'home'};
+
+function pill(c){if(!c)return '<span class="pill new">New</span>';if(c.diff>0.004)return `<span class="pill up">▲ ${c.pct.toFixed(1)}%</span>`;if(c.diff<-0.004)return `<span class="pill down">▼ ${Math.abs(c.pct).toFixed(1)}%</span>`;return '<span class="pill flat">No change</span>'}
+function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3600)}
+
+let renderQueued=false;
+function schedule(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;render()})}
+
+/* ---------- server ---------- */
+async function api(path,opts={}){
+  const o={method:opts.method||'GET',headers:{...(opts.headers||{})},credentials:'same-origin'};
+  if(opts.body instanceof Blob){o.body=opts.body}else if(opts.body!==undefined){o.body=JSON.stringify(opts.body);o.headers['content-type']='application/json'}
+  let r;
+  try{r=await fetch(path,o)}catch(e){throw Object.assign(new Error('No connection. Check the internet and try again.'),{offline:true})}
+  let data={};try{data=await r.json()}catch(e){}
+  if(r.status===401&&data.code==='AUTH'){S.role=null;showGate();}
+  if(!r.ok)throw Object.assign(new Error(data.error||'Something went wrong. Try again.'),{status:r.status,code:data.code});
+  return data;
+}
+let loading=false;
+async function load(){
+  if(loading||!S.role)return;loading=true;
+  try{
+    const d=await api('/api/data');
+    S.sup=d.suppliers;S.prod=d.products;S.inv=d.invoices;S.alerts=d.alerts;S.settings={...S.settings,...d.settings};S.role=d.role;
+    S.loaded.prod=true;S.err=null;S.slow=false;
+  }catch(e){if(e.status!==401)S.err=e.message}
+  finally{loading=false;schedule()}
+}
+setInterval(()=>{if(document.visibilityState==='visible'&&S.role&&scan.step!=='review')load()},20000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')load()});
+
+/* ---------- sign in ---------- */
+let pin='';
+function gateBrand(){return `<div class="brand"><div class="brand-mark">I&amp;P</div><div><b>Invoices &amp; Pricing</b><small>${esc(S.settings.restaurant||'Supplier price control')}</small></div></div>`}
+function showGate(msg=''){
+  const g=$('#gate');g.hidden=false;
+  if(S.noDb){g.innerHTML=`<div class="gate-card">${gateBrand()}<h1>Almost ready</h1><p>The database is not connected yet. In Vercel, open this project → Storage → Create Database → Neon, connect it, then redeploy.</p><button class="btn" onclick="location.reload()">Check again</button></div>`;return}
+  if(S.needsSetup){g.innerHTML=`<div class="gate-card">${gateBrand()}<h1>Set up your app</h1><p>Choose two PINs. You keep the owner PIN. Give the manager PIN to the people who scan invoices.</p>
+  <form id="setupForm"><label class="fl"><span>Restaurant name</span><input class="field" id="suRest" autocomplete="organization" required maxlength="80"></label>
+  <label class="fl"><span>Owner PIN (4–8 digits)</span><input class="field mono" id="suOwner" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="new-password" type="password" required></label>
+  <label class="fl"><span>Manager PIN (4–8 digits)</span><input class="field mono" id="suMgr" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="off" required></label>
+  <label class="fl"><span>Currency</span><select class="field" id="suCur">${['£','€','$','฿','A$'].map(c=>`<option>${c}</option>`).join('')}</select></label>
+  <label class="fl"><span>Email for price alerts (optional)</span><input class="field" id="suEmail" type="email" autocomplete="email"></label>
+  <div class="err" id="gateErr">${esc(msg)}</div><button class="btn primary" type="submit">Create app</button></form></div>`;
+  $('#setupForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/session',{method:'POST',body:{action:'setup',restaurant:$('#suRest').value,ownerPin:$('#suOwner').value,managerPin:$('#suMgr').value,currency:$('#suCur').value,alertEmail:$('#suEmail').value}});S.needsSetup=false;S.role='owner';hideGate();toast('Your app is ready. Scan the first invoice.');load()}catch(err){$('#gateErr').textContent=err.message}};
+  return}
+  pin='';
+  g.innerHTML=`<div class="gate-card">${gateBrand()}<h1>Enter your PIN</h1><p>Owner or manager PIN</p><div class="pinrow" id="pinDots"></div><div class="err" id="gateErr">${esc(msg)}</div>
+  <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-key="${n}">${n}</button>`).join('')}<button class="ghostkey" data-key="clear">Clear</button><button data-key="0">0</button><button class="ghostkey" data-key="ok">Enter</button></div></div>`;
+  dots();
+}
+function dots(){const el=$('#pinDots');if(el)el.innerHTML=Array.from({length:Math.max(4,pin.length)},(_,i)=>`<span class="${i<pin.length?'on':''}"></span>`).join('')}
+async function tryLogin(){
+  if(pin.length<4)return;const p=pin;pin='';dots();
+  try{const r=await api('/api/session',{method:'POST',body:{action:'login',pin:p}});S.role=r.role;hideGate();load()}
+  catch(e){$('#gateErr').textContent=e.message}
+}
+$('#gate').addEventListener('click',e=>{
+  const k=e.target.closest('[data-key]')?.dataset.key;if(!k)return;
+  if(k==='clear'){pin=''}else if(k==='ok'){tryLogin();return}else if(pin.length<8){pin+=k}
+  $('#gateErr').textContent='';dots();
+});
+document.addEventListener('keydown',e=>{if($('#gate').hidden||S.needsSetup||S.noDb)return;if(/^\d$/.test(e.key)&&pin.length<8){pin+=e.key;dots()}else if(e.key==='Backspace'){pin=pin.slice(0,-1);dots()}else if(e.key==='Enter')tryLogin()});
+function hideGate(){$('#gate').hidden=true;$('#gate').innerHTML='';render()}
+async function boot(){
+  render();
+  try{
+    const s=await api('/api/session');
+    S.features=s.features||{};
+    if(s.error==='NO_DB'){S.noDb=true;showGate();return}
+    S.needsSetup=!!s.needsSetup;S.settings={...S.settings,...(s.settings||{})};S.role=s.role;
+    if(!S.role)showGate();else{load()}
+  }catch(e){S.err=e.message;render()}
+}
+async function signOut(){try{await api('/api/session',{method:'POST',body:{action:'logout'}})}catch(e){}S.role=null;S.sup=[];S.prod=[];S.inv=[];S.alerts=[];S.loaded={};showGate()}
+
+/* ---------- navigation ---------- */
+const NAV=['home','products','compare','scan','alerts','invoices','suppliers','settings'];
+function renderNav(){
+  const v=view(),n=openAlerts().length;
+  $('#sideNav').innerHTML=NAV.filter(k=>k!=='scan').map(k=>`<button class="navbtn ${v===k?'on':''}" data-go="${k}">${I[k]}${VIEWS[k].replace(' & prices','')}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
+  const tabs=[['home','Home'],['products','Prices'],['scan','Scan'],['alerts','Alerts'],['invoices','Invoices']];
+  $('#tabbar').innerHTML=tabs.map(([k,l])=>k==='scan'?`<button class="tab scan ${v===k?'on':''}" data-go="scan" aria-label="Scan invoice"><span class="fab">${I.scan}</span>${l}</button>`:`<button class="tab ${v===k?'on':''}" data-go="${k}">${I[k]}${l}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
+  const role=isOwner()?'Owner':'Manager';
+  $('#sideFoot').innerHTML=S.role?`Signed in as <b>${role}</b> · <button class="btn ghost sm" data-act="signout" style="min-height:28px;padding:0 6px">Sign out</button><br>${S.prod.length} products · ${S.inv.length} invoices`:'';
+  $('#sideRest').textContent=S.settings.restaurant||'Supplier price control';
+}
+
+function head(v,extra=''){return `<div class="pagehead"><div><h1>${esc(VIEWS[v])}</h1><p>${esc(SUBS[v])}</p></div>${extra}</div>`}
+
+function stateBanner(){
+  if(S.err)return `<div class="banner alert"><div class="grow"><b>Data is not reachable right now.</b> ${esc(S.err)}</div></div>`;
+  if(S.slow)return '<div class="banner"><div class="grow">Still connecting to your data… Prices shown may be out of date.</div></div>';
+  return '';
+}
+
+/* ---------- views ---------- */
+function vHome(){
+  const loading=!S.loaded.prod&&!S.noDb;
+  const oa=openAlerts().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const now=new Date(),mStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
+  const monthSpend=S.inv.filter(i=>(i.date||'')>=mStart).reduce((a,i)=>a+num(i.total),0);
+  const wk=new Date(now);wk.setDate(now.getDate()-7);const wkISO=wk.toISOString().slice(0,10);
+  const weekInv=S.inv.filter(i=>(i.date||'')>=wkISO).length;
+  const extraCost=oa.reduce((a,x)=>a+Math.max(0,num(x.diff))*Math.max(1,num(x.qty)||1),0);
+  let h=head('home',`<button class="btn primary hide-m" data-go="scan">${I.scan}Scan invoice</button>`)+stateBanner();
+  if(oa.length)h+=`<div class="banner alert"><div class="grow"><b>${oa.length} price increase${oa.length>1?'s':''} need${oa.length>1?'':'s'} your review.</b><div class="small">About ${money(extraCost)} extra on the last order${oa.length>1?'s':''} at the quantities bought.</div></div><button class="btn sm" data-go="alerts">Review now</button></div>`;
+  h+=`<div class="kpis">
+    <button class="kpi" data-go="invoices"><span class="label">Spend this month</span><span class="v">${loading?'…':money(monthSpend)}</span><small>${S.inv.filter(i=>(i.date||'')>=mStart).length} invoices</small></button>
+    <button class="kpi alert" data-go="alerts"><span class="label">Open alerts</span><span class="v">${loading?'…':oa.length}</span><small>price increases</small></button>
+    <button class="kpi" data-go="products"><span class="label">Products tracked</span><span class="v">${loading?'…':S.prod.length}</span><small>from ${S.sup.length} suppliers</small></button>
+    <button class="kpi" data-go="invoices"><span class="label">Scanned last 7 days</span><span class="v">${loading?'…':weekInv}</span><small>invoices</small></button>
+  </div>`;
+  if(!loading&&!S.prod.length&&!S.noDb)h+=`<div class="panel"><div class="empty"><b>No invoices yet</b><p>Tap <b>Scan</b> and take a photo of a supplier invoice. Products and prices appear here automatically.</p><button class="btn primary" data-go="scan">${I.scan}Scan first invoice</button></div></div>`;
+  const changes=S.prod.map(p=>({p,c:change(p),l:latest(p)})).filter(x=>x.c&&Math.abs(x.c.diff)>0.004).sort((a,b)=>(b.l.d||'').localeCompare(a.l.d||'')).slice(0,6);
+  h+=`<div class="grid2"><div class="stack">
+    <section class="panel"><div class="panel-h"><h2>Weekly spend</h2><span class="label">last 8 weeks</span></div><div class="panel-b">${spendChart()}</div></section>
+    <section class="panel"><div class="panel-h"><h2>Latest price changes</h2><button class="btn ghost sm" data-go="products">All prices →</button></div><div class="rows">${changes.length?changes.map(({p,c,l})=>`<button class="row" data-product="${esc(p.id)}"><span class="t">${esc(p.name)}</span><span class="r price">${money(l.p)}<small>/${esc(p.unit)}</small></span><span class="s">${esc(supName(p.supplierId))} · ${fmtShort(l.d)}</span><span class="r">${pill(c)}</span></button>`).join(''):'<div class="empty small">No price changes yet.</div>'}</div></section>
+  </div><div class="stack">
+    <section class="panel"><div class="panel-h"><h2>Needs review</h2><button class="btn ghost sm" data-go="alerts">All alerts →</button></div><div class="rows">${oa.slice(0,4).map(a=>`<button class="row" data-product="${esc(a.productId)}"><span class="t">${esc(a.productName)}</span><span class="r pill up">+${num(a.pct).toFixed(1)}%</span><span class="s">${esc(supName(a.supplierId))} · ${money(a.from)} → ${money(a.to)}</span><span class="r small muted">${fmtShort(a.date)}</span></button>`).join('')||'<div class="empty small">Nothing to review. You will see increases here as soon as an invoice is scanned.</div>'}</div></section>
+    <section class="panel"><div class="panel-h"><h2>Spend by supplier</h2><span class="label">this month</span></div><div class="panel-b share">${supplierShare(mStart)}</div></section>
+  </div></div>`;
+  return h;
+}
+function supplierShare(from){
+  const t={};S.inv.filter(i=>(i.date||'')>=from).forEach(i=>t[i.supplierId]=(t[i.supplierId]||0)+num(i.total));
+  const arr=Object.entries(t).sort((a,b)=>b[1]-a[1]);const tot=arr.reduce((a,x)=>a+x[1],0);
+  if(!arr.length)return '<p class="muted small">No invoices this month yet.</p>';
+  return arr.map(([id,v])=>`<div><div class="share-l"><span>${esc(supName(id))}</span><b class="mono">${money(v)}</b></div><div class="meter"><span style="width:${(v/tot*100).toFixed(1)}%"></span></div></div>`).join('');
+}
+function spendChart(){
+  const weeks=[];const now=new Date();const day=(now.getDay()+6)%7;const mon=new Date(now);mon.setDate(now.getDate()-day);mon.setHours(0,0,0,0);
+  for(let i=7;i>=0;i--){const s=new Date(mon);s.setDate(mon.getDate()-i*7);const e=new Date(s);e.setDate(s.getDate()+7);weeks.push({s,e,v:0})}
+  S.inv.forEach(inv=>{const d=new Date((inv.date||'')+'T12:00:00');const w=weeks.find(w=>d>=w.s&&d<w.e);if(w)w.v+=num(inv.total)});
+  const max=Math.max(...weeks.map(w=>w.v));if(!max)return '<p class="muted small">Spend appears here once invoices are scanned.</p>';
+  const nice=niceMax(max),W=560,H=190,L=48,R=10,T=10,B=26,bw=(W-L-R)/weeks.length;
+  let g='';[0,.5,1].forEach(f=>{const y=T+(H-T-B)*(1-f);g+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${y}" y2="${y}"/><text x="${L-6}" y="${y+3}" text-anchor="end">${esc(cur()+Math.round(nice*f).toLocaleString('en-GB'))}</text>`});
+  weeks.forEach((w,i)=>{const hh=(H-T-B)*(w.v/nice),x=L+i*bw+bw*.18,y=H-B-hh;g+=`<rect class="bar ${i===7?'cur':''}" x="${x}" y="${y}" width="${bw*.64}" height="${Math.max(hh,w.v?2:0)}" rx="4" fill="currentColor"><title>Week of ${fmtShort(w.s.toISOString().slice(0,10))}: ${money(w.v)}</title></rect><text x="${x+bw*.32}" y="${H-8}" text-anchor="middle">${i===7?'This wk':fmtShort(w.s.toISOString().slice(0,10))}</text>`});
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly spend for the last 8 weeks">${g}</svg>`;
+}
+function niceMax(m){const p=Math.pow(10,Math.floor(Math.log10(m)));const n=m/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p}
+
+function supOptions(sel,allLabel){return `<option value="all">${allLabel}</option>`+[...S.sup].sort((a,b)=>a.name.localeCompare(b.name)).map(s=>`<option value="${esc(s.id)}" ${sel===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}
+
+function vProducts(){
+  let list=S.prod.map(p=>({p,l:latest(p),pr:previous(p),c:change(p)}));
+  const q=norm(UI.pq);
+  list=list.filter(x=>(UI.psup==='all'||x.p.supplierId===UI.psup)&&(!q||norm(x.p.name+' '+supName(x.p.supplierId)).includes(q)));
+  if(UI.pfilter==='up')list=list.filter(x=>x.c&&x.c.diff>0.004);
+  if(UI.pfilter==='down')list=list.filter(x=>x.c&&x.c.diff<-0.004);
+  list.sort((a,b)=>UI.psort==='change'?((b.c?.pct??-999)-(a.c?.pct??-999)):UI.psort==='recent'?((b.l?.d||'').localeCompare(a.l?.d||'')):a.p.name.localeCompare(b.p.name));
+  let h=head('products')+stateBanner();
+  h+=`<div class="toolbar"><input class="field search" id="pq" type="search" placeholder="Search products or suppliers" value="${esc(UI.pq)}" aria-label="Search products"><select class="field" id="psup" aria-label="Supplier">${supOptions(UI.psup,'All suppliers')}</select><select class="field" id="psort" aria-label="Sort"><option value="name" ${UI.psort==='name'?'selected':''}>Sort: A–Z</option><option value="change" ${UI.psort==='change'?'selected':''}>Sort: biggest increase</option><option value="recent" ${UI.psort==='recent'?'selected':''}>Sort: recently invoiced</option></select></div>
+  <div class="chips">${[['all','All'],['up','Price went up'],['down','Price went down']].map(([k,l])=>`<button class="chip ${UI.pfilter===k?'on':''}" data-pfilter="${k}">${l}</button>`).join('')}<button class="chip" data-go="compare">Compare suppliers →</button></div>`;
+  if(!list.length)return h+`<div class="panel"><div class="empty"><b>${S.prod.length?'No products match':'No products yet'}</b><p>${S.prod.length?'Try another search or supplier.':'Products appear here after the first invoice is scanned.'}</p></div></div>`;
+  h+=`<div class="panel table-d"><div class="tablewrap"><table class="list"><thead><tr><th>Product</th><th>Supplier</th><th class="num">Latest price</th><th class="num">Previous</th><th class="num">Change</th><th class="num">Last invoice</th></tr></thead><tbody>${list.map(x=>`<tr data-product="${esc(x.p.id)}" tabindex="0"><td><b>${esc(x.p.name)}</b> <span class="muted small">per ${esc(x.p.unit)}</span></td><td>${esc(supName(x.p.supplierId))}</td><td class="num price">${x.l?money(x.l.p):'—'}</td><td class="num mono muted">${x.pr?money(x.pr.p):'—'}</td><td class="num">${pill(x.c)}${x.c&&Math.abs(x.c.diff)>0.004?`<div class="small mono muted">${x.c.diff>0?'+':''}${money(x.c.diff)}</div>`:''}</td><td class="num small muted">${x.l?fmtShort(x.l.d):'—'}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="panel cards"><div class="rows">${list.map(x=>`<button class="row" data-product="${esc(x.p.id)}"><span class="t">${esc(x.p.name)}</span><span class="r price">${x.l?money(x.l.p):'—'}<small>/${esc(x.p.unit)}</small></span><span class="s">${esc(supName(x.p.supplierId))}${x.pr?` · was ${money(x.pr.p)}`:''}</span><span class="r">${pill(x.c)}</span></button>`).join('')}</div></div>`;
+  return h;
+}
+
+function compareGroups(){
+  const g={};S.prod.forEach(p=>{const k=norm(p.name)+'|'+norm(p.unit);(g[k]=g[k]||[]).push(p)});
+  return Object.values(g).filter(a=>a.length>1&&new Set(a.map(p=>p.supplierId)).size>1);
+}
+function vCompare(){
+  let h=head('compare')+stateBanner();
+  const q=norm(UI.cq);
+  const groups=compareGroups().filter(a=>!q||norm(a[0].name).includes(q)).sort((a,b)=>a[0].name.localeCompare(b[0].name));
+  h+=`<div class="toolbar"><input class="field search" id="cq" type="search" placeholder="Search a product" value="${esc(UI.cq)}" aria-label="Search products to compare"></div>`;
+  if(!groups.length)return h+`<div class="panel"><div class="empty"><b>Nothing to compare yet</b><p>When two suppliers sell a product with the same name and unit, it shows up here side by side.</p></div></div>`;
+  h+='<div class="stack">'+groups.map(a=>{const items=a.map(p=>({p,l:latest(p)})).filter(x=>x.l).sort((x,y)=>x.l.p-y.l.p);const best=items[0];return `<section class="panel"><div class="panel-h"><h3>${esc(a[0].name)} <span class="muted small">per ${esc(a[0].unit)}</span></h3><span class="small muted">${items.length} suppliers</span></div><div class="rows">${items.map((x,i)=>`<button class="row" data-product="${esc(x.p.id)}"><span class="t">${esc(supName(x.p.supplierId))}</span><span class="r price">${money(x.l.p)}</span><span class="s">Last bought ${fmtShort(x.l.d)}</span><span class="r">${i===0?'<span class="pill down">Cheapest</span>':`<span class="pill up">+${money(x.l.p-best.l.p)}</span>`}</span></button>`).join('')}</div></section>`}).join('')+'</div>';
+  return h;
+}
+
+function vAlerts(){
+  let list=[...S.alerts].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||0)-(a.createdAt||0));
+  if(UI.afilter==='open')list=list.filter(a=>a.status!=='reviewed');
+  if(UI.afilter==='reviewed')list=list.filter(a=>a.status==='reviewed');
+  let h=head('alerts')+stateBanner();
+  h+=`<div class="chips">${[['open',`To review (${openAlerts().length})`],['reviewed','Reviewed'],['all','All']].map(([k,l])=>`<button class="chip ${UI.afilter===k?'on':''}" data-afilter="${k}">${l}</button>`).join('')}</div>
+  <p class="small muted" style="margin-bottom:12px">An alert is created whenever an invoice shows a higher price than the last invoice from the same supplier${num(S.settings.threshold)>0?` by ${num(S.settings.threshold)}% or more`:''}. Pack size or quality changes can explain some increases.</p>`;
+  if(!list.length)return h+`<div class="panel"><div class="empty"><b>${UI.afilter==='open'?'All clear':'No alerts here'}</b><p>${UI.afilter==='open'?'No price increases waiting for review.':'Nothing in this list yet.'}</p></div></div>`;
+  h+='<div class="panel">'+list.map(a=>`<div class="alertcard ${a.status==='reviewed'?'done':''}"><div><b>${esc(a.productName)}</b> <span class="muted small">· ${esc(supName(a.supplierId))}</span><div class="fromto"><s>${money(a.from)}</s> → <b>${money(a.to)}</b> <span class="muted">per ${esc(a.unit)}</span></div><div class="small muted">Invoice <span class="mono">${esc(a.invoiceNumber||'—')}</span> · ${fmtDate(a.date)}${num(a.qty)?` · ${num(a.qty)} ${esc(a.unit)} bought = ${money(num(a.diff)*num(a.qty))} extra`:''}</div>${a.note?`<div class="note">${esc(a.note)}</div>`:''}</div><div class="big">+${num(a.pct).toFixed(1)}%<div class="small mono">+${money(a.diff)}</div></div><div class="acts">${a.status==='reviewed'?`<span class="pill down">${I.check.replace('<svg','<svg width="13" height="13"')} Reviewed</span>${isOwner()?`<button class="btn sm ghost" data-reopen="${esc(a.id)}">Reopen</button>`:''}`:(isOwner()?`<button class="btn sm primary" data-review="${esc(a.id)}">Mark reviewed</button>`:'<span class="pill warn">Waiting for owner</span>')}<button class="btn sm" data-product="${esc(a.productId)}">Price history</button>${a.invoiceId?`<button class="btn sm" data-invoice="${esc(a.invoiceId)}">View invoice</button>`:''}</div></div>`).join('')+'</div>';
+  return h;
+}
+
+function vInvoices(){
+  const q=norm(UI.iq);
+  const list=S.inv.filter(i=>(UI.isup==='all'||i.supplierId===UI.isup)&&(!q||norm((i.number||'')+' '+supName(i.supplierId)).includes(q))).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||0)-(a.createdAt||0));
+  let h=head('invoices',`<button class="btn primary hide-m" data-go="scan">${I.scan}Scan invoice</button>`)+stateBanner();
+  h+=`<div class="toolbar"><input class="field search" id="iq" type="search" placeholder="Search invoice number or supplier" value="${esc(UI.iq)}" aria-label="Search invoices"><select class="field" id="isup" aria-label="Supplier">${supOptions(UI.isup,'All suppliers')}</select></div>`;
+  if(!list.length)return h+`<div class="panel"><div class="empty"><b>${S.inv.length?'No invoices match':'No invoices yet'}</b><p>${S.inv.length?'Try another search.':'Scanned invoices are kept here with their photos.'}</p></div></div>`;
+  const total=list.reduce((a,i)=>a+num(i.total),0);
+  h+=`<p class="small muted" style="margin-bottom:10px">${list.length} invoices · ${money(total)}</p><div class="panel"><div class="rows">${list.map(i=>{const al=S.alerts.filter(a=>a.invoiceId===i.id&&a.status!=='reviewed').length;return `<button class="row" data-invoice="${esc(i.id)}"><span class="t">${esc(supName(i.supplierId))}</span><span class="r price">${money(i.total)}</span><span class="s"><span class="mono">${esc(i.number||'No number')}</span> · ${fmtDate(i.date)} · ${(i.lines||[]).length} items${i.photos?.length?' · 📷':''}</span><span class="r">${al?`<span class="pill up">${al} increase${al>1?'s':''}</span>`:''}</span></button>`}).join('')}</div></div>`;
+  return h;
+}
+
+function vSuppliers(){
+  let h=head('suppliers')+stateBanner();
+  if(!S.sup.length)return h+'<div class="panel"><div class="empty"><b>No suppliers yet</b><p>Suppliers are added automatically from scanned invoices.</p></div></div>';
+  h+='<div class="panel"><div class="rows">'+[...S.sup].sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{const ps=S.prod.filter(p=>p.supplierId===s.id);const ups=ps.filter(p=>{const c=change(p);return c&&c.diff>0.004}).length;const inv=S.inv.filter(i=>i.supplierId===s.id);const last=inv.map(i=>i.date).sort().pop();const oa=openAlerts().filter(a=>a.supplierId===s.id).length;return `<button class="row" data-supplier="${esc(s.id)}"><span class="t">${esc(s.name)}</span><span class="r">${oa?`<span class="pill up">${oa} to review</span>`:ups?`<span class="pill warn">${ups} up</span>`:'<span class="pill flat">Stable</span>'}</span><span class="s">${ps.length} products · ${inv.length} invoices${last?` · last ${fmtShort(last)}`:''}</span><span class="r small mono">${money(inv.reduce((a,i)=>a+num(i.total),0))}</span></button>`}).join('')+'</div></div>';
+  return h;
+}
+
+function vSettings(){
+  const ro=!isOwner(),f=S.features||{};
+  let h=head('settings')+stateBanner();
+  h+=`<div class="grid2"><div class="stack"><section class="panel"><div class="panel-h"><h2>Alerts</h2>${ro?'<span class="pill flat">Owner only</span>':''}</div><div class="panel-b">
+    <div class="setrow"><div><b>Restaurant name</b><p class="small muted">Shown on the sign-in screen.</p></div><input class="field" id="setRest" value="${esc(S.settings.restaurant||'')}" ${ro?'disabled':''}></div>
+    <div class="setrow"><div><b>Alert when a price rises by at least</b><p class="small muted">0% alerts on every increase, even 1p.</p></div><div style="display:flex;gap:8px;align-items:center"><input class="field mono" id="setThr" type="number" min="0" max="100" step="0.5" value="${num(S.settings.threshold)}" ${ro?'disabled':''} style="max-width:110px"><span>%</span></div></div>
+    <div class="setrow"><div><b>Email price alerts to</b><p class="small muted">${f.email?'Sent as soon as an invoice with a price increase is saved.':'Email sending is not switched on yet (see setup notes).'} Separate several addresses with commas.</p></div><input class="field" id="setEmail" type="email" multiple value="${esc(S.settings.alertEmail||'')}" placeholder="owner@restaurant.com" ${ro?'disabled':''}></div>
+    <div class="setrow"><div><b>Currency</b></div><select class="field" id="setCur" ${ro?'disabled':''}>${['£','€','$','฿','A$'].map(c=>`<option value="${esc(c)}" ${cur()===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    ${ro?'':'<div class="savebar"><button class="btn primary" data-act="saveSettings">Save settings</button></div>'}
+  </div></section>
+  ${ro?'':`<section class="panel"><div class="panel-h"><h2>PINs</h2></div><div class="panel-b"><p class="small muted" style="margin-bottom:10px">Changing a PIN signs everyone else out. Leave a field empty to keep that PIN.</p><div class="form2" style="grid-template-columns:1fr 1fr"><label class="fl"><span>New owner PIN</span><input class="field mono" id="newOwnerPin" inputmode="numeric" type="password" autocomplete="new-password"></label><label class="fl"><span>New manager PIN</span><input class="field mono" id="newMgrPin" inputmode="numeric" autocomplete="off"></label></div><div class="savebar"><button class="btn" data-act="savePins">Change PINs</button></div></div></section>`}
+  </div>
+  <div class="stack"><section class="panel"><div class="panel-h"><h2>How your team uses it</h2></div><div class="panel-b"><ol class="howto">
+    <li><span>Send your managers this website address and the <b>manager PIN</b>.</span></li>
+    <li><span>On their phone they open it, tap Share → <b>Add to Home Screen</b>. It then opens like an app.</span></li>
+    <li><span>Each delivery: tap the big <b>Scan</b> button, photograph every page, check the lines, tap Save.</span></li>
+    <li><span>You sign in with the <b>owner PIN</b> to see every price, invoice photo and alert, and to mark alerts reviewed.</span></li>
+  </ol></div></section>
+  <section class="panel"><div class="panel-h"><h2>System status</h2></div><div class="panel-b rows" style="padding:0 0 6px">
+    ${[['Database',true],['Invoice photos',f.photos],['Automatic reading',f.ai],['Email alerts',f.email]].map(([l,ok])=>`<div class="row" style="padding-inline:18px"><span class="t">${l}</span><span class="r">${ok?'<span class="pill down">On</span>':'<span class="pill warn">Not set up</span>'}</span></div>`).join('')}
+  </div></section>
+  <button class="btn" data-act="signout">Sign out</button></div></div>`;
+  return h;
+}
+
+/* ---------- scan ---------- */
+function vScan(){
+  let h=head('scan')+stateBanner();
+  const ro=false;
+  const st=scan.step;
+  h+=`<div class="steps" style="margin-bottom:16px">${[['capture','1 Photo'],['reading','2 Read'],['review','3 Check'],['done','4 Saved']].map(([k,l])=>`<span class="${st===k||(st==='saving'&&k==='review')?'on':''}">${l}</span>`).join('')}</div>`;
+  if(st==='capture'){
+    const max=MAX_PAGES;
+    h+=`<section class="panel"><div class="scan-hero">
+      ${scan.photos.length?`<div class="thumbs">${scan.photos.map((p,i)=>`<div class="thumb"><img src="${p.url}" alt="Invoice page ${i+1}"><span class="pg">p.${i+1}</span><button data-rmphoto="${i}" aria-label="Remove page ${i+1}">×</button></div>`).join('')}${scan.photos.length<max?`<label class="addpage">+ Add page<input type="file" accept="image/*" capture="environment" data-photo="1" aria-label="Add another page"></label>`:''}</div>
+      <p class="small muted">Check every page is sharp and the prices are readable.</p>
+      <div class="savebar" style="justify-content:center;width:100%"><button class="btn" data-act="resetScan">Start over</button><button class="btn primary" data-act="read" ${ro?'disabled':''}>Read invoice →</button></div>`
+      :`<label class="cam">${I.scan}<b>Take photo of invoice</b><span class="small muted">Lay it flat, fill the frame, good light</span><input type="file" accept="image/*" capture="environment" data-photo="1" aria-label="Take a photo of the invoice"></label>
+      <label class="btn">${I.gallery}Choose from photos or files<input type="file" accept="image/*" multiple data-photo="1" hidden></label>`}
+      ${S.role&&S.features.ai===false?'<p class="notice">Automatic reading is not switched on yet. You can still add the photo and enter the lines by hand.</p>':''}
+      <button class="btn ghost sm" data-act="manual" ${ro?'disabled':''}>Enter an invoice by hand instead</button>
+    </div></section>`;
+  }else if(st==='reading'){
+    h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted">Uploading the photos, then finding the supplier, every product, quantity and price. This takes about 20–40 seconds.</p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
+  }else if(st==='review'||st==='saving'){
+    h+=reviewHTML();
+  }else if(st==='done'){
+    const r=scan.result||{};
+    h+=`<section class="panel"><div class="result"><div class="tick">${I.check}</div><h2>Invoice saved</h2><p>${esc(r.supplier)} · <span class="mono">${esc(r.number||'')}</span> · ${r.lines} products · ${money(r.total)}</p>
+    ${r.ups?`<div class="banner alert" style="width:100%;max-width:520px;text-align:left"><div class="grow"><b>${r.ups} price increase${r.ups>1?'s':''} found.</b> The owner has been alerted${r.emailed?' by email and':''} in the app.</div><button class="btn sm" data-go="alerts">See alerts</button></div>`:'<p class="pill down" style="font-size:13px">No price increases on this invoice</p>'}
+    ${r.news?`<p class="small muted">${r.news} new product${r.news>1?'s':''} added to tracking.</p>`:''}
+    <div class="savebar" style="justify-content:center"><button class="btn" data-invoice="${esc(r.id)}">View invoice</button><button class="btn primary" data-act="resetScan">${I.scan}Scan next invoice</button></div></div></section>`;
+  }
+  if(scan.error)h+=`<div class="banner alert" style="margin-top:14px"><div class="grow">${esc(scan.error)}</div></div>`;
+  return h;
+}
+
+function matchSupplier(name){const n=norm(name);if(!n)return null;return S.sup.find(s=>norm(s.name)===n)||S.sup.find(s=>{const m=norm(s.name);return m.length>3&&(n.includes(m)||m.includes(n))})||null}
+function matchProduct(supplierId,name){const n=norm(name);if(!n||!supplierId||supplierId==='new')return null;return S.prod.find(p=>p.supplierId===supplierId&&norm(p.name)===n)||null}
+function lastBefore(p,date){const h=sortedHist(p).filter(x=>(x.d||'')<=(date||'9999'));return h.length?h[h.length-1]:null}
+
+function cmpHTML(l){
+  const d=scan.draft;const p=matchProduct(d.supplierId,l.name);
+  if(!l.name.trim())return '<span class="muted">Enter a product name</span>';
+  if(!p)return `<span class="pill new">New product</span><span class="muted">Price history starts with this invoice.</span>`;
+  const pr=lastBefore(p,d.date);if(!pr)return '<span class="pill new">First price</span>';
+  const unitWarn=norm(p.unit)!==norm(l.unit)?` <span class="pill warn">Unit was ${esc(p.unit)}</span>`:'';
+  const diff=round2(num(l.price)-pr.p),pct=pr.p?diff/pr.p*100:0;
+  if(diff>0.004)return `<span class="pill up">▲ +${money(diff)} (${pct.toFixed(1)}%)</span><span class="muted">Last paid ${money(pr.p)} on ${fmtShort(pr.d)}</span>${unitWarn}`;
+  if(diff<-0.004)return `<span class="pill down">▼ ${money(diff)} (${pct.toFixed(1)}%)</span><span class="muted">Last paid ${money(pr.p)} on ${fmtShort(pr.d)}</span>${unitWarn}`;
+  return `<span class="pill flat">Same as last time</span><span class="muted">${money(pr.p)} on ${fmtShort(pr.d)}</span>${unitWarn}`;
+}
+function draftTotal(){return round2(scan.draft.lines.reduce((a,l)=>a+num(l.qty)*num(l.price),0))}
+function reviewHTML(){
+  const d=scan.draft,saving=scan.step==='saving';
+  const supSel=`<select class="field" id="dSup">${[...S.sup].sort((a,b)=>a.name.localeCompare(b.name)).map(s=>`<option value="${esc(s.id)}" ${d.supplierId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}<option value="new" ${d.supplierId==='new'?'selected':''}>+ New supplier…</option></select>`;
+  const tot=draftTotal(),printed=num(d.printedTotal);
+  const mismatch=printed>0&&Math.abs(printed-tot)>0.05;
+  return `<div class="reviewgrid">${scan.photos.length?`<aside class="panel" style="padding:12px"><div class="photostrip">${scan.photos.map((p,i)=>`<a href="${p.url}" target="_blank" rel="noopener"><img src="${p.url}" alt="Invoice page ${i+1}"></a>`).join('')}</div><p class="small muted" style="margin-top:8px">Tap a page to zoom.</p></aside>`:''}
+  <section class="panel" style="${scan.photos.length?'':'grid-column:1/-1'}"><div class="panel-h"><h2>Check the details</h2>${scan.source==='ai'?'<span class="pill new">Read by Claude</span>':''}</div><div class="panel-b">
+    ${scan.source==='ai'?'<p class="notice" style="margin-bottom:14px">Compare each line with the photo. Fix anything that was read wrong before saving.</p>':''}
+    <div class="form2"><label class="fl"><span>Supplier</span>${supSel}</label><label class="fl" ${d.supplierId==='new'?'':'hidden'} id="dNewWrap"><span>New supplier name</span><input class="field" id="dNewSup" value="${esc(d.newSupplier||'')}" placeholder="Supplier name"></label><label class="fl"><span>Invoice number</span><input class="field mono" id="dNum" value="${esc(d.number)}" placeholder="e.g. INV-2041"></label><label class="fl"><span>Invoice date</span><input class="field" id="dDate" type="date" value="${esc(d.date)}"></label></div>
+    <div style="margin-top:16px" id="dLines">${d.lines.map((l,i)=>lineHTML(l,i)).join('')}</div>
+    <button class="btn sm" data-act="addLine" style="margin-top:10px">+ Add line</button>
+    <div class="totals"><span><b>Total from lines</b>${printed?`<br><span class="small muted">Printed on invoice: ${money(printed)}</span>`:''}</span><span class="price" id="dTot">${money(tot)}</span></div>
+    <div id="dMismatch">${mismatch?'<p class="notice" style="margin-top:10px;color:var(--warn)">The lines do not add up to the printed total. VAT, delivery or a missed line can cause this. Check the photo.</p>':''}</div>
+    <div class="savebar"><button class="btn" data-act="resetScan" ${saving?'disabled':''}>Discard</button><button class="btn primary" data-act="save" ${saving?'disabled':''}>${saving?'Saving…':'Save invoice & check prices'}</button></div>
+  </div></section></div>`;
+}
+function lineHTML(l,i){return `<div class="line" data-line="${i}"><label class="fl nm"><span>Product</span><input class="field" data-lf="name" value="${esc(l.name)}" list="prodNames"></label><label class="fl"><span>Qty</span><input class="field mono" data-lf="qty" inputmode="decimal" value="${esc(l.qty)}"></label><label class="fl"><span>Unit</span><input class="field" data-lf="unit" value="${esc(l.unit)}" placeholder="kg"></label><label class="fl"><span>Price / unit</span><input class="field mono" data-lf="price" inputmode="decimal" value="${esc(l.price)}"></label><button class="x" data-rmline="${i}" aria-label="Remove line">×</button><div class="cmp">${cmpHTML(l)}</div></div>`}
+
+async function shrink(file){
+  try{
+    const url=URL.createObjectURL(file);const img=new Image();img.src=url;await img.decode();
+    const m=1800,sc=Math.min(1,m/Math.max(img.naturalWidth,img.naturalHeight));
+    const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
+    const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.86));return b||file;
+  }catch(e){return file}
+}
+async function addPhotos(files){
+  const max=MAX_PAGES;
+  for(const f of files){if(scan.photos.length>=max){toast(`Up to ${max} pages per invoice.`);break}if(!/^image\//.test(f.type)&&!/\.(jpe?g|png|heic|webp)$/i.test(f.name)){toast('Please choose a photo (JPG or PNG).');continue}const b=await shrink(f);scan.photos.push({blob:b,url:URL.createObjectURL(b)})}
+  scan.error='';render();
+}
+
+let readAbort=null;
+async function uploadPhotos(){
+  for(const p of scan.photos){
+    if(p.remote)continue;
+    const r=await api('/api/upload',{method:'POST',body:p.blob,headers:{'content-type':'application/octet-stream','x-file-type':p.blob.type||'image/jpeg'}});
+    p.remote=r.url;
+  }
+  return scan.photos.map(p=>p.remote);
+}
+async function readInvoice(){
+  if(S.features.ai===false){scan.error='Automatic reading is not switched on yet. Enter the invoice by hand.';startManual();return}
+  scan.step='reading';scan.error='';render();
+  const myRun=(readAbort={cancelled:false});
+  try{
+    const urls=await uploadPhotos();
+    if(myRun.cancelled)return;
+    const r=await api('/api/read',{method:'POST',body:{photos:urls}});
+    if(myRun.cancelled)return;
+    if(!r||r.readable===false||!Array.isArray(r.lines)||!r.lines.length){scan.step='capture';scan.error=(r&&r.problem)?'This could not be read: '+r.problem+' Retake the photo or enter it by hand.':'No line items were found. Retake the photo in better light, or enter it by hand.';render();return}
+    const sup=matchSupplier(r.supplier);
+    scan.source='ai';
+    scan.draft={supplierId:sup?sup.id:'new',newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:todayISO(),printedTotal:num(r.invoiceTotal),
+      lines:r.lines.map(l=>({name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),qty:String(num(l.quantity)||1),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0)))})).filter(l=>l.name)};
+    scan.step='review';lastView=null;render();
+  }catch(e){
+    if(myRun.cancelled)return;
+    scan.step='capture';scan.error=e.message;render();
+  }
+}
+function startManual(){
+  scan.source='manual';
+  scan.draft={supplierId:S.sup[0]?.id||'new',newSupplier:'',number:'',date:todayISO(),printedTotal:0,lines:[{name:'',unit:'kg',qty:'1',price:''}]};
+  scan.step='review';render();
+}
+
+async function saveInvoice(){
+  const d=scan.draft;
+  const lines=d.lines.map(l=>({name:l.name.trim(),unit:(l.unit||'each').trim(),qty:num(l.qty),price:round2(num(l.price))})).filter(l=>l.name);
+  if(d.supplierId==='new'&&!(d.newSupplier||'').trim()){toast('Add the supplier name.');return}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d.date||'')){toast('Add the invoice date.');return}
+  if(!lines.length){toast('Add at least one product line.');return}
+  if(lines.some(l=>!(l.price>0))){toast('Every line needs a price above zero.');return}
+  scan.step='saving';scan.error='';render();
+  try{
+    let photos=[];
+    if(scan.photos.length){try{photos=await uploadPhotos()}catch(e){if(!confirmNoPhoto){scan.step='review';scan.error='The photo could not be uploaded ('+e.message+'). Tap Save again to save the invoice without its photo.';confirmNoPhoto=true;render();return}}}
+    const r=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines,photos,source:scan.source,allowDuplicate:!!d.dupOk}});
+    scan.photos.forEach(p=>URL.revokeObjectURL(p.url));confirmNoPhoto=false;
+    scan={step:'done',photos:[],draft:null,error:'',source:'ai',result:r};
+    render();load();
+  }catch(e){
+    scan.step='review';
+    if(e.code==='DUP'){d.dupOk=true;scan.error=e.message+' Tap Save again only if this really is a different invoice.'}
+    else scan.error=e.message;
+    render();
+  }
+}
+let confirmNoPhoto=false;
+
+/* ---------- sheets ---------- */
+function openSheet(html){$('#sheetCard').innerHTML=html;$('#sheet').hidden=false;$('#sheetCard').scrollTop=0;document.body.style.overflow='hidden';setTimeout(()=>$('#sheetCard .closex')?.focus(),30)}
+function closeSheet(){$('#sheet').hidden=true;document.body.style.overflow='';$('#sheetCard').innerHTML=''}
+
+function productChart(h){
+  if(h.length<2)return '<p class="small muted">The chart appears after the second invoice for this product.</p>';
+  const W=600,H=200,L=52,R=14,T=14,B=28;const vals=h.map(x=>x.p);let mn=Math.min(...vals),mx=Math.max(...vals);const pad=(mx-mn)*.25||mx*.1||1;mn=Math.max(0,mn-pad);mx=mx+pad;
+  const X=i=>L+(W-L-R)*(i/(h.length-1)),Y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
+  let g='';[0,.5,1].forEach(f=>{const v=mn+(mx-mn)*f,y=Y(v);g+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${y}" y2="${y}"/><text x="${L-6}" y="${y+3}" text-anchor="end">${esc(money(v))}</text>`});
+  const pts=h.map((x,i)=>`${X(i)},${Y(x.p)}`).join(' ');
+  g+=`<polygon class="ar" fill="currentColor" points="${L},${H-B} ${pts} ${X(h.length-1)},${H-B}"/><polyline class="ln" points="${pts}"/>`;
+  const step=Math.ceil(h.length/6);
+  h.forEach((x,i)=>{g+=`<circle class="dot ${i===h.length-1?'last':''}" cx="${X(i)}" cy="${Y(x.p)}" r="${i===h.length-1?5:3.5}"><title>${fmtDate(x.d)}: ${money(x.p)}</title></circle>`;if(i%step===0||i===h.length-1)g+=`<text x="${X(i)}" y="${H-8}" text-anchor="${i===0?'start':i===h.length-1?'end':'middle'}">${esc(fmtShort(x.d))}</text>`});
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Price history chart">${g}</svg>`;
+}
+function showProduct(id){
+  const p=S.prod.find(x=>x.id===id);if(!p){toast('Product not found.');return}
+  const h=sortedHist(p),l=latest(p),c=change(p);const vals=h.map(x=>x.p);
+  const peers=S.prod.filter(x=>norm(x.name)===norm(p.name)&&norm(x.unit)===norm(p.unit)).map(x=>({x,l:latest(x)})).filter(z=>z.l).sort((a,b)=>a.l.p-b.l.p);
+  openSheet(`<div class="sheet-h"><div><span class="label">${esc(supName(p.supplierId))}</span><h2 style="font-size:24px;margin-top:3px">${esc(p.name)}</h2><p class="muted small">Price per ${esc(p.unit)}</p></div><button class="closex" data-act="close" aria-label="Close">×</button></div>
+  <div class="facts"><div class="fact"><span class="label">Latest</span><b>${l?money(l.p):'—'}</b><span class="small muted">${l?fmtShort(l.d):''}</span></div><div class="fact"><span class="label">Change</span><b style="color:${c&&c.diff>0.004?'var(--up)':c&&c.diff<-0.004?'var(--down)':'inherit'}">${c?(c.diff>0?'+':'')+money(c.diff):'—'}</b><span class="small">${pill(c)}</span></div><div class="fact"><span class="label">Range</span><b>${vals.length?money(Math.min(...vals)):'—'}</b><span class="small muted">to ${vals.length?money(Math.max(...vals)):'—'}</span></div></div>
+  ${productChart(h)}
+  ${peers.length>1?`<h3 style="margin:18px 0 6px">Other suppliers</h3><div class="rows">${peers.map((z,i)=>`<button class="row" data-product="${esc(z.x.id)}" style="padding-inline:0"><span class="t">${esc(supName(z.x.supplierId))}${z.x.id===p.id?' <span class="muted small">(this)</span>':''}</span><span class="r price">${money(z.l.p)}</span><span class="s">${fmtShort(z.l.d)}</span><span class="r">${i===0?'<span class="pill down">Cheapest</span>':`<span class="pill up">+${money(z.l.p-peers[0].l.p)}</span>`}</span></button>`).join('')}</div>`:''}
+  <h3 style="margin:18px 0 6px">Full price history</h3><div class="tablewrap"><table class="list"><thead><tr><th>Date</th><th>Invoice</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Change</th></tr></thead><tbody>${h.slice().reverse().map((x,i,arr)=>{const pr=arr[i+1];const d=pr?round2(x.p-pr.p):null;const inv=S.inv.find(v=>v.id===x.inv);return `<tr ${inv?`data-invoice="${esc(inv.id)}"`:''}><td>${fmtDate(x.d)}</td><td class="mono small">${esc(inv?.number||'—')}</td><td class="num mono">${x.q??'—'}</td><td class="num price">${money(x.p)}</td><td class="num">${d==null?'<span class="pill new">First</span>':Math.abs(d)<0.005?'<span class="muted small">—</span>':`<span class="pill ${d>0?'up':'down'}">${d>0?'+':''}${money(d)}</span>`}</td></tr>`}).join('')}</tbody></table></div>`);
+}
+function showInvoice(id){
+  const i=S.inv.find(x=>x.id===id);if(!i){toast('Invoice not found.');return}
+  const ro=!isOwner();
+  openSheet(`<div class="sheet-h"><div><span class="label">Invoice <span class="mono">${esc(i.number||'')}</span></span><h2 style="font-size:24px;margin-top:3px">${esc(supName(i.supplierId))}</h2><p class="muted small">${fmtDate(i.date)} · ${i.source==='manual'?'Entered by hand':'Scanned'}${i.demo?' · Example':''}</p></div><button class="closex" data-act="close" aria-label="Close">×</button></div>
+  ${(i.photos||[]).map((a,n)=>`<a href="${esc(a)}" target="_blank" rel="noopener"><img class="invoice-photo" src="${esc(a)}" alt="Invoice photo page ${n+1}" loading="lazy"></a>`).join('')||'<p class="notice" style="margin-bottom:12px">No photo stored for this invoice.</p>'}
+  <div class="tablewrap"><table class="list"><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th></tr></thead><tbody>${(i.lines||[]).map(l=>{const a=S.alerts.find(x=>x.invoiceId===i.id&&x.productId===l.productId);return `<tr data-product="${esc(l.productId)}"><td><b>${esc(l.name)}</b> <span class="muted small">/${esc(l.unit)}</span>${a?` <span class="pill up">+${num(a.pct).toFixed(1)}%</span>`:''}</td><td class="num mono">${l.qty}</td><td class="num price">${money(l.price)}</td><td class="num mono">${money(l.qty*l.price)}</td></tr>`}).join('')}</tbody></table></div>
+  <div class="totals"><b>Total</b><span class="price">${money(i.total)}</span></div>
+  ${num(i.printedTotal)&&Math.abs(num(i.printedTotal)-num(i.total))>0.05?`<p class="small muted" style="margin-top:6px">Printed total ${money(i.printedTotal)} (may include VAT or delivery)</p>`:''}
+  ${!ro?`<div class="savebar" id="delWrap"><button class="btn danger sm" data-askdel="${esc(i.id)}">Delete invoice</button></div>`:''}`);
+}
+function showSupplier(id){UI.psup=id;UI.pq='';UI.pfilter='all';location.hash='products';}
+
+async function deleteInvoice(id){
+  try{await api('/api/invoices?id='+encodeURIComponent(id),{method:'DELETE'});closeSheet();toast('Invoice deleted and prices updated.');load()}
+  catch(e){toast(e.message)}
+}
+
+/* ---------- render ---------- */
+let lastView=null;
+function render(){
+  renderNav();
+  const v=view();
+  if(v==='scan'&&(scan.step==='review')&&lastView==='scan'&&document.getElementById('dLines')){refreshCmp();return}
+  const fn={home:vHome,products:vProducts,compare:vCompare,scan:vScan,alerts:vAlerts,invoices:vInvoices,suppliers:vSuppliers,settings:vSettings}[v];
+  const active=document.activeElement,aid=active&&active.id,pos=aid&&active.selectionStart;
+  $('#main').innerHTML=fn()+`<datalist id="prodNames">${[...new Set(S.prod.map(p=>p.name))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
+  if(aid){const el=document.getElementById(aid);if(el&&el!==document.body){el.focus();try{if(pos!=null)el.setSelectionRange(pos,pos)}catch(e){}}}
+  lastView=v;
+}
+function refreshCmp(){
+  document.querySelectorAll('#dLines .line').forEach(el=>{const i=+el.dataset.line;const l=scan.draft.lines[i];if(l)el.querySelector('.cmp').innerHTML=cmpHTML(l)});
+  const t=$('#dTot');if(t)t.textContent=money(draftTotal());
+  const printed=num(scan.draft.printedTotal),mm=$('#dMismatch');if(mm)mm.innerHTML=printed>0&&Math.abs(printed-draftTotal())>0.05?'<p class="notice" style="margin-top:10px;color:var(--warn)">The lines do not add up to the printed total. VAT, delivery or a missed line can cause this. Check the photo.</p>':'';
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
+  if(!t)return;
+  if(t.dataset.go){closeSheet();if(location.hash==='#'+t.dataset.go)render();else location.hash=t.dataset.go;window.scrollTo({top:0});return}
+  if(t.dataset.product){showProduct(t.dataset.product);return}
+  if(t.dataset.invoice){showInvoice(t.dataset.invoice);return}
+  if(t.dataset.supplier){showSupplier(t.dataset.supplier);return}
+  if(t.dataset.pfilter){UI.pfilter=t.dataset.pfilter;render();return}
+  if(t.dataset.afilter){UI.afilter=t.dataset.afilter;render();return}
+  if(t.dataset.review){if(!isOwner()){toast('Only the owner can review alerts.');return}try{await api('/api/alerts',{method:'PATCH',body:{id:t.dataset.review,status:'reviewed'}});toast('Marked as reviewed.');load()}catch(e){toast(e.message)}return}
+  if(t.dataset.reopen){try{await api('/api/alerts',{method:'PATCH',body:{id:t.dataset.reopen,status:'open'}});toast('Alert reopened.');load()}catch(e){toast(e.message)}return}
+  if(t.dataset.rmphoto!=null){const p=scan.photos.splice(+t.dataset.rmphoto,1)[0];if(p)URL.revokeObjectURL(p.url);render();return}
+  if(t.dataset.rmline!=null){scan.draft.lines.splice(+t.dataset.rmline,1);lastView=null;render();return}
+  if(t.dataset.askdel){$('#delWrap').innerHTML=`<div class="banner alert" style="width:100%;margin:0"><div class="grow">Delete this invoice? Its prices and alerts are removed too.</div><button class="btn sm danger" data-del="${esc(t.dataset.askdel)}">Delete</button><button class="btn sm" data-act="close">Keep</button></div>`;return}
+  if(t.dataset.del){deleteInvoice(t.dataset.del);return}
+  const a=t.dataset.act;
+  if(a==='close')closeSheet();
+  else if(a==='read')readInvoice();
+  else if(a==='cancelRead'){if(readAbort)readAbort.cancelled=true;scan.step='capture';render()}
+  else if(a==='manual')startManual();
+  else if(a==='resetScan'){scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
+  else if(a==='addLine'){scan.draft.lines.push({name:'',unit:'kg',qty:'1',price:''});lastView=null;render();const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[ins.length-1]?.focus()}
+  else if(a==='save')saveInvoice();
+  else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),currency:$('#setCur').value,restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
+  else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});toast('PINs changed. Tell your managers the new PIN.');$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
+  else if(a==='signout')signOut();
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet();
+  if(e.key==='Enter'&&e.target.matches('tr[data-product]'))showProduct(e.target.dataset.product);
+});
+$('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.photo){addPhotos([...t.files]);t.value='';return}
+  if(t.id==='psup'){UI.psup=t.value;render()}
+  if(t.id==='psort'){UI.psort=t.value;render()}
+  if(t.id==='isup'){UI.isup=t.value;render()}
+  if(t.id==='dSup'){scan.draft.supplierId=t.value;$('#dNewWrap').hidden=t.value!=='new';refreshCmp()}
+  if(t.id==='dDate'){scan.draft.date=t.value;refreshCmp()}
+});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.id==='pq'){UI.pq=t.value;render()}
+  if(t.id==='iq'){UI.iq=t.value;render()}
+  if(t.id==='cq'){UI.cq=t.value;render()}
+  if(t.id==='dNum'){scan.draft.number=t.value;scan.draft.dupOk=false}
+  if(t.id==='dNewSup')scan.draft.newSupplier=t.value;
+  if(t.dataset.lf){const i=+t.closest('.line').dataset.line;scan.draft.lines[i][t.dataset.lf]=t.value;refreshCmp()}
+});
+window.addEventListener('hashchange',()=>{closeSheet();lastView=null;render()});
+boot();
+})();
+</script>
+</body>
+</html>

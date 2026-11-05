@@ -1,0 +1,12 @@
+{
+  "name": "invoices-and-pricing",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Restaurant supplier invoice scanner and price tracker",
+  "engines": { "node": "22.x" },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "@vercel/blob": "^1.1.1"
+  }
+}
