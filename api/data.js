@@ -1,10 +1,12 @@
 // Everything the app shows: suppliers, products with full price history, invoices, alerts.
-import { route, json, sql, publicSettings } from './_lib.js';
+import { route, json, sql, publicSettings, saveSettings } from './_lib.js';
+import { runRepairs } from './_fix.js';
 
 const n = (v) => (v == null ? null : Number(v));
 const d = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v || '').slice(0, 10));
 
 export const GET = route(async (request, { role, settings }) => {
+  await runRepairs(settings, saveSettings);
   const [sup, prod, pts, inv, al] = await sql.transaction([
     sql`select id, name from suppliers order by name`,
     sql`select id, supplier_id, name, unit from products`,

@@ -2,6 +2,7 @@
 import { del } from '@vercel/blob';
 import { route, json, fail, sql } from './_lib.js';
 import { saveInvoice } from './_save.js';
+import { convertLine } from './_fix.js';
 
 export const POST = route(async (request, ctx) => {
   const b = await request.json().catch(() => null);
@@ -27,4 +28,11 @@ export const DELETE = route(async (request) => {
   const photos = r[0].photos || [];
   if (photos.length && process.env.BLOB_READ_WRITE_TOKEN) await del(photos).catch((e) => console.error('Photo delete failed', e));
   return json({ ok: true });
+}, { needs: 'owner' });
+
+// Fix the pack size of one line, e.g. "1 box" was really 12 bunches.
+export const PATCH = route(async (request) => {
+  const b = await request.json().catch(() => ({}));
+  const r = await convertLine(String(b.invoiceId || ''), String(b.productId || ''), b.count, b.unit);
+  return r.ok ? json(r) : fail(r.error, 400);
 }, { needs: 'owner' });
