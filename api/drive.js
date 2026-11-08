@@ -21,6 +21,7 @@ async function driveError(r) {
   let msg = '';
   try { msg = JSON.parse(t).error?.message || ''; } catch {}
   if (/has not been used|is disabled|SERVICE_DISABLED|API_KEY_SERVICE_BLOCKED|blocked/i.test(t)) return { code: 'DRIVE_API_OFF', message: 'Google Drive is not switched on for your Google key yet. Turn on the "Google Drive API" for the same Google project (see the steps in the app).' };
+  if (/API keys are not supported/i.test(t)) return { code: 'NEED_DRIVE_KEY', message: 'Your Gemini key cannot open Google Drive. Create a separate Google Drive key and add it in Vercel as GOOGLE_DRIVE_API_KEY (see the steps).' };
   if (r.status === 404) return { code: 'NO_ACCESS', message: 'The folder could not be opened. In Google Drive, set the folder to "Anyone with the link – Viewer".' };
   return { code: 'DRIVE_ERROR', message: `Google Drive said: ${msg || r.status}` };
 }
