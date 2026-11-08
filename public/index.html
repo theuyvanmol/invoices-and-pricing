@@ -198,7 +198,7 @@ table.list .num{text-align:right;white-space:nowrap}
 .fl{display:grid;gap:5px;min-width:0}
 .fl>span{font-size:12px;font-weight:700;color:var(--ink-2)}
 .line{padding:10px 0;border-top:1px solid var(--line)}
-.ledit{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,.6fr) minmax(0,.8fr) minmax(0,.8fr) minmax(0,.9fr) 40px;gap:8px;align-items:end;margin-top:10px}
+.ledit{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,.55fr) minmax(0,.85fr) minmax(0,.75fr) minmax(0,.8fr) minmax(0,.8fr) 40px;gap:8px;align-items:end;margin-top:10px}
 .line:not(.open) .ledit{display:none}
 .lsum{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start}
 .lsum .ln{font-weight:650;overflow-wrap:anywhere}
@@ -295,6 +295,7 @@ table.list .num{text-align:right;white-space:nowrap}
   .form2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .form2 .fl:first-child{grid-column:1/-1}
   .ledit{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .ledit .tot{grid-column:span 2}
   .line .nm{grid-column:1/4;grid-row:1}
   .line .x{grid-row:1;grid-column:4;justify-self:end;width:44px}
   .sheet{align-items:flex-end;padding:0}
@@ -673,6 +674,10 @@ function impAdd(files){
   toast(`${added} file${added===1?'':'s'} ready${skipped?`, ${skipped} already imported`:''}${ignored?`, ${ignored} ignored (not a photo or PDF)`:''}.`);
   render();
 }
+// "3kg 952g" -> 3.952 kg, "952g" -> 0.952 kg, "3.952kg" -> 3.952 kg, "2" -> 2
+function parseQty(v){const s=String(v||'').toLowerCase().replace(',','.');const kg=s.match(/(\d+(?:\.\d+)?)\s*kg/),g=s.match(/(\d+(?:\.\d+)?)\s*g(?:r|rams?)?\b/);
+  if(kg||g){return {q:Math.round(((kg?parseFloat(kg[1]):0)+(g&&!(kg&&g.index===kg.index)?parseFloat(g[1])/1000:0))*1000)/1000,unit:'kg'}}
+  return {q:num(s),unit:''}}
 function fromRead(l){return {name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),pieces:num(l.pieces)?String(num(l.pieces)):'',qty:String(num(l.quantity)||''),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0))),category:l.category||'',packSize:l.packSize||'',vat:(l.vatRate===0||l.vatRate)?num(l.vatRate):(l.vat===0||l.vat?num(l.vat):''),promo:!!l.promo,regularPrice:num(l.regularPrice)||'',note:l.note||'',printed:num(l.lineTotal)||''}}
 function toSave(l){return {name:l.name.trim(),unit:(l.unit||'each').trim(),pieces:num(l.pieces)||null,qty:num(l.qty),price:round2(num(l.price)),category:l.category||null,packSize:l.packSize||null,vat:l.vat===''||l.vat==null?null:num(l.vat),promo:!!l.promo,regularPrice:num(l.regularPrice)||null,note:l.note||null}}
 function impDraft(r){
@@ -945,7 +950,7 @@ function lineOpen(l){return l._open??(scan.source!=='ai'||lineIssue(l))}
 function lineSum(l,i){const open=lineOpen(l),bad=num(l.printed)>0&&Math.abs(lineTotal(l)-num(l.printed))>0.02;
   return `<div class="lsum"><div><div class="ln">${esc(l.name)||'<span class="muted">New line</span>'}</div><div class="ld">${lineDesc(l)||'Enter quantity and price'}</div></div><div class="lr"><b class="price">${num(l.qty)&&num(l.price)?money(lineTotal(l)):'–'}</b><button class="btn sm ${open?'':'ghost'}" data-toggleline="${i}">${open?'Done':'Edit'}</button></div>
   <div class="cmp">${bad?`<span class="pill up">Invoice says ${money(num(l.printed))}</span><span class="muted">Fix the quantity or price.</span>`:''}${cmpHTML(l)}</div><div class="extras">${lineExtras(l)}${l.promo||open?`<label class="promo-t"><input type="checkbox" data-lf="promo" ${l.promo?'checked':''}> Temporary discount${l.regularPrice?` (usually ${money(l.regularPrice)})`:''}</label>`:''}</div></div>`}
-function lineHTML(l,i){return `<div class="line ${lineOpen(l)?'open':''} ${lineIssue(l)&&l.name?'issue':''}" data-line="${i}">${lineSum(l,i)}<div class="ledit"><label class="fl nm"><span>Product</span><input class="field" data-lf="name" value="${esc(l.name)}" list="prodNames"></label><label class="fl"><span>Pieces</span><input class="field mono" data-lf="pieces" inputmode="decimal" value="${esc(l.pieces||'')}" placeholder="–"></label><label class="fl"><span>Qty / weight</span><input class="field mono" data-lf="qty" inputmode="decimal" value="${esc(l.qty)}"></label><label class="fl"><span>Unit</span><input class="field" data-lf="unit" value="${esc(l.unit)}" placeholder="kg"></label><label class="fl"><span>Price per unit</span><input class="field mono" data-lf="price" inputmode="decimal" value="${esc(l.price)}"></label><button class="x" data-rmline="${i}" aria-label="Remove line">×</button></div></div>`}
+function lineHTML(l,i){return `<div class="line ${lineOpen(l)?'open':''} ${lineIssue(l)&&l.name?'issue':''}" data-line="${i}">${lineSum(l,i)}<div class="ledit"><label class="fl nm"><span>Product</span><input class="field" data-lf="name" value="${esc(l.name)}" list="prodNames"></label><label class="fl"><span>Pieces</span><input class="field mono" data-lf="pieces" inputmode="decimal" value="${esc(l.pieces||'')}" placeholder="–"></label><label class="fl"><span>Qty / weight</span><input class="field mono" data-lf="qty" value="${esc(l.qty)}" placeholder="e.g. 3.952 or 3kg 952g"></label><label class="fl"><span>Unit</span><input class="field" data-lf="unit" value="${esc(l.unit)}" placeholder="kg"></label><label class="fl"><span>Price per unit</span><input class="field mono" data-lf="price" inputmode="decimal" value="${esc(l.price)}"></label><label class="fl tot"><span>Line total £</span><input class="field mono" data-lf="total" inputmode="decimal" value="${num(l.qty)&&num(l.price)?lineTotal(l).toFixed(2):esc(l.total||'')}" placeholder="optional"></label><button class="x" data-rmline="${i}" aria-label="Remove line">×</button></div></div>`}
 function lineDesc(l){if(!num(l.qty)||!num(l.price))return '';const u=(l.unit||'').trim();return `${num(l.pieces)?`${num(l.pieces)} pcs · `:''}${num(l.qty)} ${esc(u)} × ${money(num(l.price))}${u?'/'+esc(/\s/.test(u)&&/\d/.test(u)?u.split(/\s+/)[0]:u):''} = ${money(lineTotal(l))}`}
 
 async function shrink(file){
@@ -1192,6 +1197,7 @@ $('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()})
 document.addEventListener('change',async e=>{
   const t=e.target;
   if(t.dataset.photo){addPhotos([...t.files]);t.value='';return}
+  if(t.dataset.lf==='qty'&&/[a-z]/i.test(t.value)){const el=t.closest('.line'),i=+el.dataset.line,l=scan.draft.lines[i];const r=parseQty(t.value);if(r.q>0){l.qty=String(r.q);t.value=l.qty;if(r.unit){l.unit=r.unit;const u=el.querySelector('[data-lf="unit"]');if(u)u.value=r.unit}if(num(l.total)>0&&!num(l.price)){l.price=String(Math.round(num(l.total)/r.q*100)/100);const pe=el.querySelector('[data-lf="price"]');if(pe)pe.value=l.price}refreshCmp()}return}
   if(t.dataset.lf==='promo'){const i=+t.closest('.line').dataset.line;scan.draft.lines[i].promo=t.checked;refreshCmp();return}
   if(t.dataset.addpage){const keep={supplierId:scan.draft.supplierId,number:scan.draft.number};await addPhotos([...t.files]);t.value='';const drive=scan.driveFileId,ik=scan.importKey,hist=scan.driveHistoric;await readInvoice();if(scan.step==='review'){scan.driveFileId=drive;scan.importKey=ik;scan.driveHistoric=hist;if(!scan.draft.number)scan.draft.number=keep.number}return}
   if(t.dataset.imp){impAdd(t.files);t.value='';return}
@@ -1212,7 +1218,10 @@ document.addEventListener('input',e=>{
   if(t.id==='cq'){UI.cq=t.value;render()}
   if(t.id==='dNum'){scan.draft.number=t.value;scan.draft.dupOk=false}
   if(t.id==='dNewSup')scan.draft.newSupplier=t.value;
-  if(t.dataset.lf&&t.dataset.lf!=='promo'){const i=+t.closest('.line').dataset.line;scan.draft.lines[i][t.dataset.lf]=t.value;refreshCmp()}
+  if(t.dataset.lf&&t.dataset.lf!=='promo'){const el=t.closest('.line'),i=+el.dataset.line,l=scan.draft.lines[i],f=t.dataset.lf;
+    if(f==='total'){l.total=t.value;const q=parseQty(l.qty).q;if(q>0&&num(t.value)>0){l.price=String(Math.round(num(t.value)/q*100)/100);const pe=el.querySelector('[data-lf="price"]');if(pe)pe.value=l.price}}
+    else{l[f]=t.value;if(f==='qty'||f==='price'){const te=el.querySelector('[data-lf="total"]');if(te&&num(parseQty(l.qty).q)&&num(l.price))te.value=round2(parseQty(l.qty).q*num(l.price)).toFixed(2)}}
+    refreshCmp()}
 });
 window.addEventListener('hashchange',()=>{closeSheet();lastView=null;render()});
 boot();

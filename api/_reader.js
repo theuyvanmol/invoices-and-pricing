@@ -62,6 +62,7 @@ Extract every purchased line item. Reply with ONLY a JSON object, no other text:
 Rules:
 - quantity × unitPrice must equal lineTotal, exactly as the invoice charges it. unitPrice is the price for ONE unit, before VAT/tax when both are shown. Never return the line total as unitPrice.
 - Weighed items are ONLY lines priced per kg, where weight × price = value (e.g. meat: Qty 2, Unit 3.44kg, Price 9.50, Value 32.68 → pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50). A pack size such as "1 2.5kg", "4 2.5kg" or "1 1ltr" is NOT a weight to multiply: then quantity is the number of packs (QTY column), unit is the pack (e.g. "pack 2.5kg", "case 4x2.5kg") and pieces is null.
+- Sold by weight with only a weight and a value (e.g. 3.952kg, £20.55, or 3kg 952g): quantity = weight in kg (convert grams: 952g = 0.952), unit = "kg", unitPrice = value ÷ weight (price per kg, e.g. 5.20), lineTotal = value.
 - pieces is the number of items, packs or joints delivered. Leave it null when it is the same as quantity.
 - lineTotal is the line value printed on the invoice.
 - unit is short and lowercase: kg, g, l, ml, each, box, case, tray, bunch, bag, dozen. If sold by pack, include the pack, e.g. "case 6x1l".
@@ -118,6 +119,8 @@ export function fixLines(data) {
   for (const l of data.lines || []) {
     const total = n(l.lineTotal), price = n(l.unitPrice);
     let qty = n(l.quantity), pieces = n(l.pieces);
+    if (/^(g|gr|grams?)$/i.test(l.unit || '') && qty > 0) { qty = qty / 1000; l.quantity = qty; l.unit = 'kg'; }
+    if (!(price > 0) && total > 0 && qty > 0) { l.unitPrice = Math.round((total / qty) * 100) / 100; continue; }
     if (!(total > 0) || !(price > 0)) continue;
     if (close(qty * price, total)) continue;
     if (pieces > 0 && close(pieces * price, total)) { l.quantity = pieces; l.pieces = null; if (/kg|g$|ltr|ml|\bl\b/i.test(l.unit || '') && !/\s/.test(l.unit || '')) l.unit = 'each'; continue; }
