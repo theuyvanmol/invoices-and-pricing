@@ -8,7 +8,7 @@ export async function saveInvoice(b, { role, settings, origin }) {
   const date = String(b.date || '');
   if (!ISO.test(date)) return fail('Add the invoice date.');
   const lines = (Array.isArray(b.lines) ? b.lines : [])
-    .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', qty: Number(l.qty) || 0, price: round2(Number(l.price) || 0) }))
+    .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', pieces: Number(l.pieces) > 0 ? Number(l.pieces) : null, qty: Number(l.qty) || 0, price: round2(Number(l.price) || 0) }))
     .filter((l) => l.name);
   if (!lines.length) return fail('Add at least one product line.');
   if (lines.some((l) => !(l.price > 0))) return fail('Every line needs a price above zero.');
@@ -64,7 +64,7 @@ export async function saveInvoice(b, { role, settings, origin }) {
       const sameUnit = p.isNew || norm(p.unit) === norm(l.unit);
       if (sameUnit && diff > 0.004 && pct >= threshold) alerts.push({ id: newId('a'), productId: p.id, productName: p.name, unit: l.unit, from: prior.price, to: l.price, diff, pct: round2(pct), qty: l.qty });
     }
-    invLines.push({ productId: p.id, name: p.name, unit: l.unit, qty: l.qty, price: l.price });
+    invLines.push({ productId: p.id, name: p.name, unit: l.unit, pieces: l.pieces, qty: l.qty, price: l.price, total: round2(l.qty * l.price) });
     pointQueries.push(sql`insert into price_points (product_id, invoice_id, date, price, qty) values (${p.id}, ${invoiceId}, ${date}, ${l.price}, ${l.qty})`);
   }
   const total = round2(invLines.reduce((a, l) => a + l.qty * l.price, 0));

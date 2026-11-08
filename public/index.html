@@ -197,8 +197,9 @@ table.list .num{text-align:right;white-space:nowrap}
 .form2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .fl{display:grid;gap:5px;min-width:0}
 .fl>span{font-size:12px;font-weight:700;color:var(--ink-2)}
-.line{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,.9fr) minmax(0,.8fr) minmax(0,1fr) 40px;gap:8px;padding:12px 0;border-top:1px solid var(--line);align-items:end}
+.line{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,.6fr) minmax(0,.8fr) minmax(0,.8fr) minmax(0,.9fr) 40px;gap:8px;padding:12px 0;border-top:1px solid var(--line);align-items:end}
 .line .cmp{grid-column:1/-1;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.line .lt{font-size:13px;margin-right:6px}
 .line .x{min-height:44px;border:0;background:none;color:var(--muted);font-size:20px;border-radius:10px}
 .line .x:hover{background:var(--up-soft);color:var(--up)}
 .totals{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-top:14px;border-top:2px solid var(--ink);margin-top:4px}
@@ -277,10 +278,9 @@ table.list .num{text-align:right;white-space:nowrap}
   .cards{display:grid}
   .form2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .form2 .fl:first-child{grid-column:1/-1}
-  .line{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,.6fr) minmax(0,.6fr)}
+  .line{grid-template-columns:repeat(4,minmax(0,1fr))}
   .line .nm{grid-column:1/4;grid-row:1}
   .line .x{grid-row:1;grid-column:4;justify-self:end;width:44px}
-  .line .fl:nth-child(4){grid-column:3/5}
   .sheet{align-items:flex-end;padding:0}
   .sheet-card{border-radius:20px 20px 0 0;max-height:92vh;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
   .facts{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -611,7 +611,7 @@ function drvCheck(id){
   const d=it.draft||{supplierId:S.sup[0]?.id||'new',newSupplier:'',number:'',date:'',printedTotal:0,lines:[]};
   const sup=d.supplierId!=='new'&&S.sup.some(x=>x.id===d.supplierId)?d.supplierId:(matchSupplier(d.newSupplier)?.id||'new');
   scan={step:'review',photos:it.photo?[{url:it.photo,remote:it.photo,pdf:/\.pdf(\?|$)/i.test(it.photo)}]:[],
-    draft:{...d,supplierId:sup,date:d.date||todayISO(),lines:(d.lines&&d.lines.length?d.lines:[{name:'',unit:'',qty:'1',price:''}]).map(l=>({name:l.name,unit:l.unit,qty:String(l.qty??''),price:String(l.price??'')}))},
+    draft:{...d,supplierId:sup,date:d.date||todayISO(),lines:(d.lines&&d.lines.length?d.lines:[{name:'',unit:'',qty:'1',price:''}]).map(l=>({name:l.name,unit:l.unit,pieces:l.pieces?String(l.pieces):'',qty:String(l.qty??''),price:String(l.price??'')}))},
     error:'Why it needs checking: '+(it.message||''),result:null,source:it.draft?'ai':'manual',kind:'invoice',driveFileId:id,driveHistoric:!!it.historic};
   lastView=null;location.hash='scan';
 }
@@ -657,7 +657,7 @@ function impAdd(files){
 function impDraft(r){
   const sup=matchSupplier(r.supplier);
   return {supplierId:sup?sup.id:'new',newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:'',printedTotal:num(r.invoiceTotal),subtotal:num(r.subtotalExVat),
-    lines:(r.lines||[]).map(l=>({name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),qty:String(num(l.quantity)||''),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0)))})).filter(l=>l.name)};
+    lines:(r.lines||[]).map(l=>({name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),pieces:num(l.pieces)?String(num(l.pieces)):'',qty:String(num(l.quantity)||''),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0)))})).filter(l=>l.name)};
 }
 function impProblem(r,d){
   if(r.readable===false)return 'Could not read: '+(r.problem||'unclear photo');
@@ -694,7 +694,7 @@ async function impRun(){
       const d=impDraft(r);it.draft=d;
       const why=impProblem(r,d);
       if(why){it.status='check';it.msg=why;continue}
-      const saved=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines:d.lines.map(l=>({name:l.name,unit:l.unit,qty:num(l.qty),price:round2(num(l.price))})),photos:[it.photo],source:'ai',historic:true,sourceFile:it.key}});
+      const saved=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines:d.lines.map(l=>({name:l.name,unit:l.unit,pieces:num(l.pieces)||null,qty:num(l.qty),price:round2(num(l.price))})),photos:[it.photo],source:'ai',historic:true,sourceFile:it.key}});
       it.status='saved';it.msg=`${saved.supplier} · ${d.date} · ${money(saved.total)}`;
       if(!S.sup.some(x=>x.name===saved.supplier))await load();
     }catch(e){
@@ -912,7 +912,9 @@ function reviewHTML(){
     <div class="savebar"><button class="btn" data-act="resetScan" ${saving?'disabled':''}>Discard</button><button class="btn primary" data-act="save" ${saving?'disabled':''}>${saving?'Saving…':scan.kind==='pricelist'?'Save to price list':'Save invoice & check prices'}</button></div>
   </div></section></div>`;
 }
-function lineHTML(l,i){return `<div class="line" data-line="${i}"><label class="fl nm"><span>Product</span><input class="field" data-lf="name" value="${esc(l.name)}" list="prodNames"></label><label class="fl"><span>Qty</span><input class="field mono" data-lf="qty" inputmode="decimal" value="${esc(l.qty)}"></label><label class="fl"><span>Unit</span><input class="field" data-lf="unit" value="${esc(l.unit)}" placeholder="kg"></label><label class="fl"><span>Price / unit</span><input class="field mono" data-lf="price" inputmode="decimal" value="${esc(l.price)}"></label><button class="x" data-rmline="${i}" aria-label="Remove line">×</button><div class="cmp">${cmpHTML(l)}</div></div>`}
+const lineTotal=l=>round2(num(l.qty)*num(l.price));
+function lineHTML(l,i){return `<div class="line" data-line="${i}"><label class="fl nm"><span>Product</span><input class="field" data-lf="name" value="${esc(l.name)}" list="prodNames"></label><label class="fl"><span>Pieces</span><input class="field mono" data-lf="pieces" inputmode="decimal" value="${esc(l.pieces||'')}" placeholder="–"></label><label class="fl"><span>Qty / weight</span><input class="field mono" data-lf="qty" inputmode="decimal" value="${esc(l.qty)}"></label><label class="fl"><span>Unit</span><input class="field" data-lf="unit" value="${esc(l.unit)}" placeholder="kg"></label><label class="fl"><span>Price per unit</span><input class="field mono" data-lf="price" inputmode="decimal" value="${esc(l.price)}"></label><button class="x" data-rmline="${i}" aria-label="Remove line">×</button><div class="cmp"><b class="mono lt">${lineDesc(l)}</b>${cmpHTML(l)}</div></div>`}
+function lineDesc(l){if(!num(l.qty)||!num(l.price))return '';const u=(l.unit||'').trim();return `${num(l.pieces)?`${num(l.pieces)} pcs · `:''}${num(l.qty)} ${esc(u)} × ${money(num(l.price))}${u?'/'+esc(u.replace(/^\d+\s*x\s*/i,'')):''} = ${money(lineTotal(l))}`}
 
 async function shrink(file){
   try{
@@ -952,7 +954,7 @@ async function readInvoice(){
     scan.source='ai';
     if(scan.kind==='pricelist'&&scan.supplierId&&scan.supplierId!=='new'&&!sup)scan.draft=null;
     scan.draft={supplierId:sup?sup.id:(scan.kind==='pricelist'&&scan.supplierId?scan.supplierId:'new'),newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:todayISO(),printedTotal:num(r.invoiceTotal),
-      lines:r.lines.map(l=>({name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),qty:String(num(l.quantity)||1),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0)))})).filter(l=>l.name)};
+      lines:r.lines.map(l=>({name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),pieces:num(l.pieces)?String(num(l.pieces)):'',qty:String(num(l.quantity)||1),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0)))})).filter(l=>l.name)};
     scan.step='review';lastView=null;render();
   }catch(e){
     if(myRun.cancelled)return;
@@ -1006,7 +1008,7 @@ function fillFromKnown(i){
 
 async function saveInvoice(){
   const d=scan.draft;
-  const lines=d.lines.map(l=>({name:l.name.trim(),unit:(l.unit||'each').trim(),qty:num(l.qty),price:round2(num(l.price))})).filter(l=>l.name&&(scan.kind==='pricelist'||l.qty>0));
+  const lines=d.lines.map(l=>({name:l.name.trim(),unit:(l.unit||'each').trim(),pieces:num(l.pieces)||null,qty:num(l.qty),price:round2(num(l.price))})).filter(l=>l.name&&(scan.kind==='pricelist'||l.qty>0));
   if(d.supplierId==='new'&&!(d.newSupplier||'').trim()){toast('Add the supplier name.');return}
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d.date||'')){toast('Add the invoice date.');return}
   if(!lines.length){toast('Add at least one product line.');return}
@@ -1054,14 +1056,14 @@ function showProduct(id){
   <div class="facts"><div class="fact"><span class="label">Latest</span><b>${l?money(l.p):'—'}</b><span class="small muted">${l?fmtShort(l.d):''}</span></div><div class="fact"><span class="label">Change</span><b style="color:${c&&c.diff>0.004?'var(--up)':c&&c.diff<-0.004?'var(--down)':'inherit'}">${c?(c.diff>0?'+':'')+money(c.diff):'—'}</b><span class="small">${pill(c)}</span></div><div class="fact"><span class="label">Range</span><b>${vals.length?money(Math.min(...vals)):'—'}</b><span class="small muted">to ${vals.length?money(Math.max(...vals)):'—'}</span></div></div>
   ${productChart(h)}
   ${peers.length>1?`<h3 style="margin:18px 0 6px">Other suppliers</h3><div class="rows">${peers.map((z,i)=>`<button class="row" data-product="${esc(z.x.id)}" style="padding-inline:0"><span class="t">${esc(supName(z.x.supplierId))}${z.x.id===p.id?' <span class="muted small">(this)</span>':''}</span><span class="r price">${money(z.l.p)}</span><span class="s">${fmtShort(z.l.d)}</span><span class="r">${i===0?'<span class="pill down">Cheapest</span>':`<span class="pill up">+${money(z.l.p-peers[0].l.p)}</span>`}</span></button>`).join('')}</div>`:''}
-  <h3 style="margin:18px 0 6px">Full price history</h3><div class="tablewrap"><table class="list"><thead><tr><th>Date</th><th>Invoice</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Change</th></tr></thead><tbody>${h.slice().reverse().map((x,i,arr)=>{const pr=arr[i+1];const d=pr?round2(x.p-pr.p):null;const inv=S.inv.find(v=>v.id===x.inv);return `<tr ${inv?`data-invoice="${esc(inv.id)}"`:''}><td>${fmtDate(x.d)}</td><td class="mono small">${esc(inv?.number||'—')}</td><td class="num mono">${x.q??'—'}</td><td class="num price">${money(x.p)}</td><td class="num">${d==null?'<span class="pill new">First</span>':Math.abs(d)<0.005?'<span class="muted small">—</span>':`<span class="pill ${d>0?'up':'down'}">${d>0?'+':''}${money(d)}</span>`}</td></tr>`}).join('')}</tbody></table></div>`);
+  <h3 style="margin:18px 0 6px">Full price history</h3><div class="tablewrap"><table class="list"><thead><tr><th>Date</th><th>Invoice</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th><th class="num">Change</th></tr></thead><tbody>${h.slice().reverse().map((x,i,arr)=>{const pr=arr[i+1];const d=pr?round2(x.p-pr.p):null;const inv=S.inv.find(v=>v.id===x.inv);return `<tr ${inv?`data-invoice="${esc(inv.id)}"`:''}><td>${fmtDate(x.d)}</td><td class="mono small">${esc(inv?.number||'—')}</td><td class="num mono">${x.q??'—'}</td><td class="num price">${money(x.p)}</td><td class="num mono">${x.q!=null?money(round2(x.q*x.p)):'—'}</td><td class="num">${d==null?'<span class="pill new">First</span>':Math.abs(d)<0.005?'<span class="muted small">—</span>':`<span class="pill ${d>0?'up':'down'}">${d>0?'+':''}${money(d)}</span>`}</td></tr>`}).join('')}</tbody></table></div>`);
 }
 function showInvoice(id){
   const i=S.inv.find(x=>x.id===id);if(!i){toast('Invoice not found.');return}
   const ro=!isOwner();
   openSheet(`<div class="sheet-h"><div><span class="label">Invoice <span class="mono">${esc(i.number||'')}</span></span><h2 style="font-size:24px;margin-top:3px">${esc(supName(i.supplierId))}</h2><p class="muted small">${fmtDate(i.date)} · ${i.source==='manual'?'Entered by hand':'Scanned'}${i.demo?' · Example':''}</p></div><button class="closex" data-act="close" aria-label="Close">×</button></div>
   ${(i.photos||[]).map((a,n)=>/\.pdf(\?|$)/i.test(a)?`<p style="margin-bottom:10px"><a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open PDF invoice</a></p>`:`<a href="${esc(a)}" target="_blank" rel="noopener"><img class="invoice-photo" src="${esc(a)}" alt="Invoice photo page ${n+1}" loading="lazy"></a>`).join('')||'<p class="notice" style="margin-bottom:12px">No photo stored for this invoice.</p>'}
-  <div class="tablewrap"><table class="list"><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th></tr></thead><tbody>${(i.lines||[]).map(l=>{const a=S.alerts.find(x=>x.invoiceId===i.id&&x.productId===l.productId);return `<tr data-product="${esc(l.productId)}"><td><b>${esc(l.name)}</b> <span class="muted small">/${esc(l.unit)}</span>${a?` <span class="pill up">+${num(a.pct).toFixed(1)}%</span>`:''}</td><td class="num mono">${l.qty}</td><td class="num price">${money(l.price)}</td><td class="num mono">${money(l.qty*l.price)}</td></tr>`}).join('')}</tbody></table></div>
+  <div class="tablewrap"><table class="list"><thead><tr><th>Product</th><th class="num">Pieces</th><th class="num">Qty / weight</th><th class="num">Price per unit</th><th class="num">Total</th></tr></thead><tbody>${(i.lines||[]).map(l=>{const a=S.alerts.find(x=>x.invoiceId===i.id&&x.productId===l.productId);return `<tr data-product="${esc(l.productId)}"><td><b>${esc(l.name)}</b>${a?` <span class="pill up">+${num(a.pct).toFixed(1)}%</span>`:''}</td><td class="num mono">${l.pieces||'–'}</td><td class="num mono">${l.qty} ${esc(l.unit)}</td><td class="num price">${money(l.price)}<small>/${esc(l.unit)}</small></td><td class="num price">${money(l.total??l.qty*l.price)}</td></tr>`}).join('')}</tbody></table></div>
   <div class="totals"><b>Total</b><span class="price">${money(i.total)}</span></div>
   ${num(i.printedTotal)&&Math.abs(num(i.printedTotal)-num(i.total))>0.05?`<p class="small muted" style="margin-top:6px">Printed total ${money(i.printedTotal)} (may include VAT or delivery)</p>`:''}
   ${!ro?`<div class="savebar" id="delWrap"><button class="btn danger sm" data-askdel="${esc(i.id)}">Delete invoice</button></div>`:''}`);
@@ -1087,7 +1089,7 @@ function render(){
   lastView=v;
 }
 function refreshCmp(){
-  document.querySelectorAll('#dLines .line').forEach(el=>{const i=+el.dataset.line;const l=scan.draft.lines[i];if(l)el.querySelector('.cmp').innerHTML=cmpHTML(l)});
+  document.querySelectorAll('#dLines .line').forEach(el=>{const i=+el.dataset.line;const l=scan.draft.lines[i];if(l)el.querySelector('.cmp').innerHTML=`<b class="mono lt">${lineDesc(l)}</b>`+cmpHTML(l)});
   const t=$('#dTot');if(t)t.textContent=money(draftTotal());
   const printed=num(scan.draft.printedTotal),mm=$('#dMismatch');if(mm)mm.innerHTML=printed>0&&Math.abs(printed-draftTotal())>0.05?'<p class="notice" style="margin-top:10px;color:var(--warn)">The lines do not add up to the printed total. VAT, delivery or a missed line can cause this. Check the photo.</p>':'';
 }
@@ -1143,7 +1145,7 @@ document.addEventListener('click',async e=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.matches&&e.target.matches('#dLines input')){
     e.preventDefault();
-    const line=e.target.closest('.line'),f=e.target.dataset.lf,order=['name','qty','unit','price'];
+    const line=e.target.closest('.line'),f=e.target.dataset.lf,order=['name','pieces','qty','unit','price'];
     if(f==='price'){const i=+line.dataset.line;if(i===scan.draft.lines.length-1){scan.draft.lines.push({name:'',unit:'',qty:'1',price:''});lastView=null;render()}const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[i+1]?.focus();return}
     line.querySelector(`[data-lf="${order[order.indexOf(f)+1]}"]`)?.focus();return;
   }

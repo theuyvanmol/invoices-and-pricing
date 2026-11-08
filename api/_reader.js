@@ -58,9 +58,12 @@ export async function readInvoice(photos, testModel) {
   ]);
   const prompt = `These ${urls.length} photo(s) are the pages, in order, of ONE supplier invoice or delivery note for a restaurant.
 Extract every purchased line item. Reply with ONLY a JSON object, no other text:
-{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","unit":"kg","quantity":2,"unitPrice":3.4,"lineTotal":6.8}],"subtotalExVat":0,"invoiceTotal":0,"readable":true,"problem":""}
+{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","pieces":2,"quantity":3.44,"unit":"kg","unitPrice":9.5,"lineTotal":32.68}],"subtotalExVat":0,"invoiceTotal":0,"readable":true,"problem":""}
 Rules:
-- unitPrice is the price for ONE unit as charged, before VAT/tax when both are shown. Never return the line total as unitPrice.
+- quantity × unitPrice must equal lineTotal, exactly as the invoice charges it. unitPrice is the price for ONE unit, before VAT/tax when both are shown. Never return the line total as unitPrice.
+- Weighed items (meat, fish, cheese): when the invoice shows a count AND a weight (e.g. Qty 2, Unit 3.44kg, Price 9.50, Value 32.68), set pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50 (per kg), lineTotal = 32.68.
+- pieces is the number of items, packs or joints delivered. Leave it null when it is the same as quantity.
+- lineTotal is the line value printed on the invoice.
 - unit is short and lowercase: kg, g, l, ml, each, box, case, tray, bunch, bag, dozen. If sold by pack, include the pack, e.g. "case 6x1l".
 - Skip delivery charges, deposits, discounts and tax lines. Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
 - Use plain product names without product codes. If a line clearly matches a known product below from the same supplier, reuse that exact name and unit so the price history stays linked.
