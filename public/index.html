@@ -108,7 +108,7 @@ select.field{appearance:auto}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
 .panel-h{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:16px 18px 10px}
 .panel-b{padding:0 18px 18px}
-.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
 .stack{display:grid;gap:16px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .kpi{padding:14px 16px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);text-align:left}
@@ -241,6 +241,12 @@ table.list .num{text-align:right;white-space:nowrap}
 .pastebox textarea{min-height:120px;font-family:var(--f-mono);font-size:13px;resize:vertical}
 .kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:5px;padding:1px 5px;background:var(--surface)}
 @media (max-width:640px){.choices{grid-template-columns:1fr}.choice{min-height:120px;padding:18px 14px}}
+.progress{height:10px;border-radius:9px;background:var(--surface-2);overflow:hidden}
+.progress span{display:block;height:100%;background:var(--accent);transition:width .3s}
+.improw{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:10px 18px;border-top:1px solid var(--line)}
+.improw:first-child{border-top:0}
+.improw .fn{font-family:var(--f-mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.improw .acts{display:flex;gap:6px}
 @media (max-width:1050px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.reviewgrid{grid-template-columns:minmax(0,1fr)}.photostrip{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
 @media (max-width:860px){
   .app{display:block}
@@ -351,6 +357,7 @@ const num=v=>{const n=Number(String(v??'').replace(/[^0-9.\-]/g,''));return Numb
 const round2=n=>Math.round(n*100)/100;
 
 const I={
+ import:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13l3 3 3-3"/></svg>',
  pricelist:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>',
  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>',
  products:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
@@ -363,8 +370,8 @@ const I={
  gallery:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>',
  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>'
 };
-const VIEWS={home:'Overview',pricelist:'Supplier price list',products:'Products & prices',compare:'Compare suppliers',scan:'Add invoice',alerts:'Price alerts',invoices:'Invoices',suppliers:'Suppliers',settings:'Settings'};
-const SUBS={home:'Everything you are paying, updated from every invoice your managers scan.',pricelist:'Every supplier, the products you buy from them and the current price per unit.',products:'Latest and previous price for every product from every supplier.',compare:'The same product from different suppliers, cheapest first.',scan:'Take a photo, upload a photo or PDF, or type it in. You check everything before it is saved.',alerts:'Every price increase found on an invoice, waiting for your review.',invoices:'Every scanned invoice with its photo, searchable by supplier and number.',suppliers:'Who you buy from and how their prices are moving.',settings:'Alert rules, email, PINs and how your team uses the app.'};
+const VIEWS={home:'Overview',import:'Import many invoices',pricelist:'Supplier price list',products:'Products & prices',compare:'Compare suppliers',scan:'Add invoice',alerts:'Price alerts',invoices:'Invoices',suppliers:'Suppliers',settings:'Settings'};
+const SUBS={import:'Bring in a whole folder of old invoices at once. Each one is read and saved automatically. Anything unclear waits for you under Needs checking.',home:'Everything you are paying, updated from every invoice your managers scan.',pricelist:'Every supplier, the products you buy from them and the current price per unit.',products:'Latest and previous price for every product from every supplier.',compare:'The same product from different suppliers, cheapest first.',scan:'Take a photo, upload a photo or PDF, or type it in. You check everything before it is saved.',alerts:'Every price increase found on an invoice, waiting for your review.',invoices:'Every scanned invoice with its photo, searchable by supplier and number.',suppliers:'Who you buy from and how their prices are moving.',settings:'Alert rules, email, PINs and how your team uses the app.'};
 
 /* ---------- state ---------- */
 const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'Geisha Restaurant',alertEmail:'',pinsEnabled:false},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
@@ -460,10 +467,10 @@ async function boot(){
 async function signOut(){try{await api('/api/session',{method:'POST',body:{action:'logout'}})}catch(e){}S.role=null;S.sup=[];S.prod=[];S.inv=[];S.alerts=[];S.loaded={};showGate()}
 
 /* ---------- navigation ---------- */
-const NAV=['home','pricelist','products','compare','scan','alerts','invoices','suppliers','settings'];
+const NAV=['home','pricelist','products','compare','scan','alerts','invoices','import','suppliers','settings'];
 function renderNav(){
   const v=view(),n=openAlerts().length;
-  $('#sideNav').innerHTML=NAV.filter(k=>k!=='scan').map(k=>`<button class="navbtn ${v===k?'on':''}" data-go="${k}">${I[k]}${k==='pricelist'?'Price list':k==='products'?'All products':VIEWS[k]}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
+  $('#sideNav').innerHTML=NAV.filter(k=>k!=='scan').map(k=>`<button class="navbtn ${v===k?'on':''}" data-go="${k}">${I[k]}${k==='pricelist'?'Price list':k==='products'?'All products':k==='import'?'Import many':VIEWS[k]}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
   const tabs=[['home','Home'],['pricelist','Prices'],['scan','Scan'],['alerts','Alerts'],['invoices','Invoices']];
   $('#tabbar').innerHTML=tabs.map(([k,l])=>k==='scan'?`<button class="tab scan ${v===k?'on':''}" data-go="scan" aria-label="Scan invoice"><span class="fab">${I.scan}</span>${l}</button>`:`<button class="tab ${v===k?'on':''}" data-go="${k}">${I[k]}${l}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
   const role=isOwner()?'Owner':'Manager';
@@ -571,6 +578,124 @@ function downloadCsv(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`Geisha price list ${todayISO()}.csv`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
 }
 
+/* ---------- bulk import ---------- */
+const IMP={items:[],running:false,stop:false,filter:'all',note:''};
+const impKey=f=>`${f.webkitRelativePath||f.name}|${f.size}`;
+const isPdfFile=f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name);
+const isImgFile=f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|heic)$/i.test(f.name);
+function impAdd(files){
+  const done=new Set(S.inv.map(i=>i.sourceFile).filter(Boolean)),have=new Set(IMP.items.map(x=>x.key));
+  let added=0,skipped=0,ignored=0;
+  [...files].sort((a,b)=>(a.webkitRelativePath||a.name).localeCompare(b.webkitRelativePath||b.name,undefined,{numeric:true})).forEach(f=>{
+    if(!isPdfFile(f)&&!isImgFile(f)){ignored++;return}
+    const key=impKey(f);if(have.has(key))return;have.add(key);
+    if(done.has(key)){IMP.items.push({key,file:f,status:'skipped',msg:'Already imported'});skipped++;return}
+    if(isPdfFile(f)&&f.size>4*1024*1024){IMP.items.push({key,file:f,status:'failed',msg:'PDF is over 4 MB'});return}
+    IMP.items.push({key,file:f,status:'waiting',msg:''});added++;
+  });
+  toast(`${added} file${added===1?'':'s'} ready${skipped?`, ${skipped} already imported`:''}${ignored?`, ${ignored} ignored (not a photo or PDF)`:''}.`);
+  render();
+}
+function impDraft(r){
+  const sup=matchSupplier(r.supplier);
+  return {supplierId:sup?sup.id:'new',newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:'',printedTotal:num(r.invoiceTotal),subtotal:num(r.subtotalExVat),
+    lines:(r.lines||[]).map(l=>({name:String(l.name||'').trim(),unit:String(l.unit||'each').trim(),qty:String(num(l.quantity)||''),price:String(round2(num(l.unitPrice)||(num(l.lineTotal)&&num(l.quantity)?num(l.lineTotal)/num(l.quantity):0)))})).filter(l=>l.name)};
+}
+function impProblem(r,d){
+  if(r.readable===false)return 'Could not read: '+(r.problem||'unclear photo');
+  if(!d.lines.length)return 'No product lines found';
+  if(!(d.newSupplier||d.supplierId!=='new'))return 'Supplier name not found';
+  if(!d.date)return 'Invoice date not found';
+  if(d.date>todayISO())return 'Date is in the future: '+d.date;
+  if(d.lines.some(l=>!(num(l.price)>0)||!(num(l.qty)>0)))return 'A line is missing a quantity or price';
+  const sum=round2(d.lines.reduce((a,l)=>a+num(l.qty)*num(l.price),0));
+  const totals=[d.subtotal,d.printedTotal].filter(t=>t>0);
+  if(totals.length&&!totals.some(t=>Math.abs(t-sum)<=0.05))return `Lines add up to ${money(sum)} but the invoice says ${money(totals[totals.length-1])}`;
+  return '';
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let impLock=null;
+async function impRun(){
+  if(IMP.running)return;
+  IMP.running=true;IMP.stop=false;IMP.note='';render();
+  try{impLock=await navigator.wakeLock?.request('screen')}catch(e){}
+  let lastRead=0,limitHits=0;
+  while(!IMP.stop){
+    const it=IMP.items.find(x=>x.status==='waiting');if(!it)break;
+    it.status='reading';it.msg='';schedule();
+    try{
+      if(!it.photo){
+        const blob=isPdfFile(it.file)?(it.file.type?it.file:new Blob([it.file],{type:'application/pdf'})):await shrink(it.file);
+        const up=await api('/api/upload',{method:'POST',body:blob,headers:{'content-type':'application/octet-stream','x-file-type':blob.type||'image/jpeg'}});
+        it.photo=up.url;
+      }
+      const gap=6500-(Date.now()-lastRead);if(gap>0)await sleep(gap);
+      lastRead=Date.now();
+      const r=await api('/api/read',{method:'POST',body:{photos:[it.photo]}});
+      limitHits=0;
+      const d=impDraft(r);it.draft=d;
+      const why=impProblem(r,d);
+      if(why){it.status='check';it.msg=why;continue}
+      const saved=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines:d.lines.map(l=>({name:l.name,unit:l.unit,qty:num(l.qty),price:round2(num(l.price))})),photos:[it.photo],source:'ai',historic:true,sourceFile:it.key}});
+      it.status='saved';it.msg=`${saved.supplier} · ${d.date} · ${money(saved.total)}`;
+      if(!S.sup.some(x=>x.name===saved.supplier))await load();
+    }catch(e){
+      if(e.code==='DUP'){it.status='skipped';it.msg='Already saved (same supplier and invoice number)'}
+      else if(/limit|busy/i.test(e.message)||e.status===503){
+        it.status='waiting';limitHits++;
+        if(limitHits>=4){IMP.note='Google\'s free reading limit seems to be used up for today. Come back tomorrow, open Import many, choose the same folder and press Start. Finished files are skipped.';break}
+        IMP.note=`Google is busy or the per-minute limit was reached. Waiting a minute, then carrying on (try ${limitHits} of 3).`;schedule();await sleep(65000);IMP.note='';
+      }
+      else if(e.offline){it.status='waiting';IMP.note='No internet connection. Import paused. Press Start when you are back online.';break}
+      else{it.status='failed';it.msg=e.message}
+    }
+    schedule();
+  }
+  IMP.running=false;try{impLock?.release()}catch(e){}impLock=null;
+  load();render();
+  const c=impCounts();if(!c.waiting&&!IMP.note)toast(`Import finished: ${c.saved} saved, ${c.check} to check.`);
+}
+function impCounts(){const c={waiting:0,reading:0,saved:0,check:0,skipped:0,failed:0};IMP.items.forEach(x=>c[x.status]++);return c}
+function impCheck(key){
+  const it=IMP.items.find(x=>x.key===key);if(!it)return;
+  const pdf=isPdfFile(it.file);
+  const draft=it.draft?{...it.draft,date:it.draft.date||todayISO(),lines:it.draft.lines.length?it.draft.lines:[{name:'',unit:'',qty:'1',price:''}]}:{supplierId:S.sup[0]?.id||'new',newSupplier:'',number:'',date:todayISO(),printedTotal:0,lines:[{name:'',unit:'',qty:'1',price:''}]};
+  scan={step:'review',photos:it.photo?[{url:it.photo,remote:it.photo,pdf}]:[],draft,error:it.msg?'Why it needs checking: '+it.msg:'',result:null,source:it.draft?'ai':'manual',kind:'invoice',importKey:key};
+  lastView=null;location.hash='scan';
+}
+function vImport(){
+  const c=impCounts(),total=IMP.items.length,doneN=c.saved+c.check+c.skipped+c.failed;
+  let h=head('import')+stateBanner();
+  if(S.features.ai===false)h+='<div class="banner alert"><div class="grow"><b>Automatic reading is off.</b> Bulk import needs it. Add the Gemini key first.</div></div>';
+  h+=`<div class="grid2"><div class="stack">
+  <section class="panel"><div class="panel-h"><h2>1. Choose the invoices</h2></div><div class="panel-b">
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="btn primary">${I.import}Choose a folder<input type="file" webkitdirectory directory multiple data-imp="1" hidden></label><label class="btn">Choose files<input type="file" multiple accept="image/*,application/pdf,.pdf" data-imp="1" hidden></label></div>
+    <p class="small muted" style="margin-top:10px">Photos (JPG, PNG) and PDFs. One invoice per file. You can add more files at any time. Files already imported are skipped automatically.</p>
+  </div></section>
+  <section class="panel"><div class="panel-h"><h2>2. Import</h2>${IMP.running?'<span class="pill new">Running</span>':''}</div><div class="panel-b">
+    ${total?`<div class="share-l"><span>${doneN} of ${total} done</span><b class="mono">${total?Math.round(doneN/total*100):0}%</b></div><div class="progress"><span style="width:${total?doneN/total*100:0}%"></span></div>
+    <div class="chips" style="margin:12px 0 0">${[['all',`All ${total}`],['waiting',`Waiting ${c.waiting+c.reading}`],['saved',`Saved ${c.saved}`],['check',`Needs checking ${c.check}`],['skipped',`Skipped ${c.skipped}`],['failed',`Failed ${c.failed}`]].map(([k,l])=>`<button class="chip ${IMP.filter===k?'on':''}" data-impf="${k}">${l}</button>`).join('')}</div>`:'<p class="muted">No files chosen yet.</p>'}
+    ${IMP.note?`<p class="notice" style="margin-top:12px">${esc(IMP.note)}</p>`:''}
+    <div class="savebar">${IMP.running?'<button class="btn" data-act="impPause">Pause</button>':`<button class="btn" data-act="impClear" ${total&&!IMP.running?'':'disabled'}>Clear list</button><button class="btn primary" data-act="impStart" ${c.waiting&&S.features.ai!==false?'':'disabled'}>${doneN?'Continue':'Start'} import</button>`}</div>
+  </div></section></div>
+  <div class="stack"><section class="panel"><div class="panel-h"><h2>Before you start</h2></div><div class="panel-b"><ol class="howto">
+    <li><span><b>Get the Google Drive folder onto this laptop.</b> In Google Drive, right-click the folder → <b>Download</b>. Drive makes a .zip. Open it to unzip, then choose the unzipped folder here. Or, with Google Drive for desktop installed, choose the folder straight from the Google Drive drive.</span></li>
+    <li><span><b>Keep this page open</b> and the laptop plugged in. Each invoice takes about 10 seconds, so 1,000 take around 3 hours. You can use other tabs meanwhile.</span></li>
+    <li><span>Old invoices build each product's price history. <b>They do not create price alerts.</b> Only new invoices do.</span></li>
+    <li><span>Google's free plan has a daily limit. If it is reached, the import pauses. Continue the next day with the same folder.</span></li>
+    <li><span>An invoice that does not add up, or is missing a date or supplier, is <b>not saved</b>. It waits under <b>Needs checking</b> until you fix it.</span></li>
+  </ol></div></section></div></div>`;
+  if(total){
+    const list=IMP.items.filter(x=>IMP.filter==='all'||x.status===IMP.filter||(IMP.filter==='waiting'&&x.status==='reading'));
+    const order={check:0,failed:1,reading:2,waiting:3,saved:4,skipped:5};
+    const shown=(IMP.filter==='all'?[...list].sort((a,b)=>order[a.status]-order[b.status]):list).slice(0,300);
+    const P={waiting:'<span class="pill flat">Waiting</span>',reading:'<span class="pill new">Reading…</span>',saved:'<span class="pill down">Saved</span>',check:'<span class="pill warn">Needs checking</span>',skipped:'<span class="pill flat">Skipped</span>',failed:'<span class="pill up">Failed</span>'};
+    h+=`<section class="panel" style="margin-top:16px"><div class="rows">${shown.map(x=>`<div class="improw"><span class="fn" title="${esc(x.key.split('|')[0])}">${esc(x.key.split('|')[0])}</span><span class="acts">${P[x.status]}${x.status==='check'||x.status==='failed'?`<button class="btn sm" data-impcheck="${esc(x.key)}" ${IMP.running?'disabled':''}>Check</button>`:''}${x.status==='failed'?`<button class="btn sm ghost" data-impretry="${esc(x.key)}">Retry</button>`:''}</span>${x.msg?`<span class="small muted" style="grid-column:1/-1">${esc(x.msg)}</span>`:''}</div>`).join('')}${list.length>shown.length?`<div class="empty small">and ${list.length-shown.length} more</div>`:''}</div></section>`;
+  }
+  return h;
+}
+window.addEventListener('beforeunload',e=>{if(IMP.running){e.preventDefault();e.returnValue=''}});
+
 function vProducts(){
   let list=S.prod.map(p=>({p,l:latest(p),pr:previous(p),c:change(p)}));
   const q=norm(UI.pq);
@@ -675,6 +800,7 @@ function vScan(){
         <button class="choice" data-act="manual" ${ro?'disabled':''}>${I.invoices}<b>${pl?'Type the prices in':'Type it in'}</b><span class="small muted">Enter the products and prices yourself, or paste rows from a spreadsheet.</span></button>
       </div>`}
       ${S.role&&S.features.ai===false?'<p class="notice">Automatic reading is not switched on yet. You can still add the photo and type the lines in.</p>':''}
+      ${scan.photos.length||pl?'':'<button class="btn ghost sm hide-m" data-go="import">Lots of old invoices, e.g. a Google Drive folder? Import them all at once →</button>'}
     </div></section>`;
   }else if(st==='reading'){
     h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted">Uploading the photos, then finding the supplier, every product, quantity and price. This takes about 20–40 seconds.</p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
@@ -828,9 +954,11 @@ async function saveInvoice(){
   try{
     let photos=[];
     if(scan.photos.length){try{photos=await uploadPhotos()}catch(e){if(!confirmNoPhoto){scan.step='review';scan.error='The photo could not be uploaded ('+e.message+'). Tap Save again to save the invoice without its photo.';confirmNoPhoto=true;render();return}}}
-    const r=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines,photos,source:scan.kind==='pricelist'?'pricelist':scan.source,allowDuplicate:!!d.dupOk}});
+    const r=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines,photos,historic:!!scan.importKey,sourceFile:scan.importKey||undefined,source:scan.kind==='pricelist'?'pricelist':scan.source,allowDuplicate:!!d.dupOk}});
     scan.photos.forEach(p=>URL.revokeObjectURL(p.url));confirmNoPhoto=false;
+    const ik=scan.importKey;
     scan={step:'done',photos:[],draft:null,error:'',source:'ai',result:{...r,kind:scan.kind}};
+    if(ik){const it=IMP.items.find(x=>x.key===ik);if(it){it.status='saved';it.msg=`${r.supplier} · ${money(r.total)}`}scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';toast('Saved. Next one to check is below.');load();return}
     render();load();
   }catch(e){
     scan.step='review';
@@ -888,8 +1016,9 @@ let lastView=null;
 function render(){
   renderNav();
   const v=view();
+  if(IMP.running&&v==='scan'&&scan.step==='review'&&document.getElementById('dLines'))return;
   if(v==='scan'&&(scan.step==='review')&&lastView==='scan'&&document.getElementById('dLines')){refreshCmp();return}
-  const fn={home:vHome,pricelist:vPricelist,products:vProducts,compare:vCompare,scan:vScan,alerts:vAlerts,invoices:vInvoices,suppliers:vSuppliers,settings:vSettings}[v];
+  const fn={home:vHome,import:vImport,pricelist:vPricelist,products:vProducts,compare:vCompare,scan:vScan,alerts:vAlerts,invoices:vInvoices,suppliers:vSuppliers,settings:vSettings}[v];
   const active=document.activeElement,aid=active&&active.id,pos=aid&&active.selectionStart;
   $('#main').innerHTML=fn()+`<datalist id="prodNames">${[...new Set(S.prod.map(p=>p.name))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
   if(aid){const el=document.getElementById(aid);if(el&&el!==document.body){el.focus();try{if(pos!=null)el.setSelectionRange(pos,pos)}catch(e){}}}
@@ -903,8 +1032,11 @@ function refreshCmp(){
 
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
+  const t=e.target.closest('[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
   if(!t)return;
+  if(t.dataset.impf){IMP.filter=t.dataset.impf;render();return}
+  if(t.dataset.impcheck){impCheck(t.dataset.impcheck);return}
+  if(t.dataset.impretry){const it=IMP.items.find(x=>x.key===t.dataset.impretry);if(it){it.status='waiting';it.msg='';render()}return}
   if(t.dataset.go){closeSheet();if(location.hash==='#'+t.dataset.go)render();else location.hash=t.dataset.go;window.scrollTo({top:0});return}
   if(t.dataset.product){showProduct(t.dataset.product);return}
   if(t.dataset.invoice){showInvoice(t.dataset.invoice);return}
@@ -926,12 +1058,15 @@ document.addEventListener('click',async e=>{
   else if(a==='pasteToggle'){UI.paste=!UI.paste;lastView=null;render();if(UI.paste)setTimeout(()=>$('#pasteText')?.focus(),30)}
   else if(a==='pasteAdd'){const rows=parsePaste($('#pasteText')?.value);if(!rows.length){toast('No product rows found. Each row needs a name and a price.');return}scan.draft.lines=scan.draft.lines.filter(l=>l.name.trim()||num(l.price)).concat(rows);UI.paste=false;lastView=null;render();toast(`${rows.length} line${rows.length>1?'s':''} added. Check them before saving.`)}
   else if(a==='loadSup'){const rows=supplierProductLines(scan.draft.supplierId);const have=new Set(scan.draft.lines.map(l=>norm(l.name)));scan.draft.lines=scan.draft.lines.filter(l=>l.name.trim()).concat(rows.filter(r=>!have.has(norm(r.name))));lastView=null;render();toast('Fill in the quantities. Change any price that is different.')}
-  else if(a==='resetScan'){scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
+  else if(a==='resetScan'){if(scan.importKey){scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';return}scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
   else if(a==='addLine'){scan.draft.lines.push({name:'',unit:'',qty:'1',price:''});lastView=null;render();const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[ins.length-1]?.focus()}
   else if(a==='save')saveInvoice();
   else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
   else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});S.settings.pinsEnabled=true;toast('PIN sign-in is on. Tell your managers the manager PIN.');render();$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
   else if(a==='signout')signOut();
+  else if(a==='impStart')impRun();
+  else if(a==='impPause'){IMP.stop=true;IMP.note='Pausing after the current invoice…';render()}
+  else if(a==='impClear'){IMP.items=[];IMP.note='';render()}
   else if(a==='csv')downloadCsv();
   else if(a==='print')window.print();
   else if(a==='newPricelist'||a==='addTo'){scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'manual',kind:'pricelist',supplierId:t.dataset.sup||'new'};lastView=null;if(location.hash==='#scan')render();else location.hash='scan';window.scrollTo({top:0})}
@@ -950,6 +1085,7 @@ $('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()})
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.photo){addPhotos([...t.files]);t.value='';return}
+  if(t.dataset.imp){impAdd(t.files);t.value='';return}
   if(t.id==='psup'){UI.psup=t.value;render()}
   if(t.id==='lsup'){UI.lsup=t.value;render()}
   if(t.id==='psort'){UI.psort=t.value;render()}

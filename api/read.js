@@ -55,15 +55,15 @@ export const POST = route(async (request) => {
 
   const [sup, prod] = await sql.transaction([
     sql`select name from suppliers order by name limit 100`,
-    sql`select p.name, p.unit, s.name as supplier from products p join suppliers s on s.id = p.supplier_id order by s.name, p.name limit 400`,
+    sql`select p.name, p.unit, s.name as supplier from products p join suppliers s on s.id = p.supplier_id order by s.name, p.name limit 700`,
   ]);
   const prompt = `These ${urls.length} photo(s) are the pages, in order, of ONE supplier invoice or delivery note for a restaurant.
 Extract every purchased line item. Reply with ONLY a JSON object, no other text:
-{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","unit":"kg","quantity":2,"unitPrice":3.4,"lineTotal":6.8}],"invoiceTotal":0,"readable":true,"problem":""}
+{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","unit":"kg","quantity":2,"unitPrice":3.4,"lineTotal":6.8}],"subtotalExVat":0,"invoiceTotal":0,"readable":true,"problem":""}
 Rules:
 - unitPrice is the price for ONE unit as charged, before VAT/tax when both are shown. Never return the line total as unitPrice.
 - unit is short and lowercase: kg, g, l, ml, each, box, case, tray, bunch, bag, dozen. If sold by pack, include the pack, e.g. "case 6x1l".
-- Skip delivery charges, deposits, discounts and tax lines. Put the grand total printed on the invoice in invoiceTotal.
+- Skip delivery charges, deposits, discounts and tax lines. Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
 - Use plain product names without product codes. If a line clearly matches a known product below from the same supplier, reuse that exact name and unit so the price history stays linked.
 - Dates on invoices may be day/month/year. Return ISO YYYY-MM-DD.
 - If the photos are not an invoice or cannot be read, set readable to false and explain briefly in problem.

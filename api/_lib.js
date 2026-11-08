@@ -27,6 +27,7 @@ export async function ensureSchema() {
     sql`create index if not exists price_points_product on price_points(product_id, date)`,
     sql`create table if not exists alerts (id text primary key, product_id text not null references products(id) on delete cascade, supplier_id text not null, invoice_id text references invoices(id) on delete cascade, product_name text, unit text, from_price numeric, to_price numeric, diff numeric, pct numeric, qty numeric, invoice_number text, date date, status text not null default 'open', note text, created_at timestamptz default now(), reviewed_at timestamptz)`,
   ]);
+  await sql`alter table invoices add column if not exists source_file text`;
   schemaReady = true;
 }
 

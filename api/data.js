@@ -9,7 +9,7 @@ export const GET = route(async (request, { role, settings }) => {
     sql`select id, name from suppliers order by name`,
     sql`select id, supplier_id, name, unit from products`,
     sql`select product_id, invoice_id, date, price, qty, extract(epoch from created_at)*1000 as t from price_points order by date, created_at`,
-    sql`select id, supplier_id, number, date, lines, total, printed_total, photos, source, extract(epoch from created_at)*1000 as t from invoices order by date desc, created_at desc limit 3000`,
+    sql`select id, supplier_id, number, date, lines, total, printed_total, photos, source, source_file, extract(epoch from created_at)*1000 as t from invoices order by date desc, created_at desc limit 3000`,
     sql`select * from alerts order by date desc, created_at desc limit 2000`,
   ]);
   const hist = {};
@@ -19,7 +19,7 @@ export const GET = route(async (request, { role, settings }) => {
     settings: publicSettings(settings),
     suppliers: sup,
     products: prod.map((p) => ({ id: p.id, supplierId: p.supplier_id, name: p.name, unit: p.unit, history: hist[p.id] || [] })),
-    invoices: inv.map((i) => ({ id: i.id, supplierId: i.supplier_id, number: i.number, date: d(i.date), lines: i.lines, total: n(i.total), printedTotal: n(i.printed_total), photos: i.photos || [], source: i.source, createdAt: n(i.t) })),
+    invoices: inv.map((i) => ({ id: i.id, supplierId: i.supplier_id, number: i.number, date: d(i.date), lines: i.lines, total: n(i.total), printedTotal: n(i.printed_total), photos: i.photos || [], sourceFile: i.source_file || null, source: i.source, createdAt: n(i.t) })),
     alerts: al.map((a) => ({ id: a.id, productId: a.product_id, supplierId: a.supplier_id, invoiceId: a.invoice_id, productName: a.product_name, unit: a.unit, from: n(a.from_price), to: n(a.to_price), diff: n(a.diff), pct: n(a.pct), qty: n(a.qty), invoiceNumber: a.invoice_number, date: d(a.date), status: a.status, note: a.note || '' })),
   });
 });

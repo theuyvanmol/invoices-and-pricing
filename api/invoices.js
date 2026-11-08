@@ -60,7 +60,7 @@ export const POST = route(async (request, { role, settings }) => {
       queries.push(sql`update products set unit = ${l.unit} where id = ${p.id}`);
     }
     const prior = p.isNew ? null : priorOf[p.id];
-    if (prior && prior.price > 0) {
+    if (prior && prior.price > 0 && !b.historic) {
       const diff = round2(l.price - prior.price), pct = (diff / prior.price) * 100;
       if (diff > 0.004 && pct >= threshold) alerts.push({ id: newId('a'), productId: p.id, productName: p.name, unit: l.unit, from: prior.price, to: l.price, diff, pct: round2(pct), qty: l.qty });
     }
@@ -68,13 +68,13 @@ export const POST = route(async (request, { role, settings }) => {
     pointQueries.push(sql`insert into price_points (product_id, invoice_id, date, price, qty) values (${p.id}, ${invoiceId}, ${date}, ${l.price}, ${l.qty})`);
   }
   const total = round2(invLines.reduce((a, l) => a + l.qty * l.price, 0));
-  queries.push(sql`insert into invoices (id, supplier_id, number, date, lines, total, printed_total, photos, source, created_by) values (${invoiceId}, ${supplierId}, ${number}, ${date}, ${JSON.stringify(invLines)}::jsonb, ${total}, ${Number(b.printedTotal) || null}, ${JSON.stringify(photos)}::jsonb, ${['ai','pricelist'].includes(b.source) ? b.source : 'manual'}, ${role})`);
+  queries.push(sql`insert into invoices (id, supplier_id, number, date, lines, total, printed_total, photos, source, created_by, source_file) values (${invoiceId}, ${supplierId}, ${number}, ${date}, ${JSON.stringify(invLines)}::jsonb, ${total}, ${Number(b.printedTotal) || null}, ${JSON.stringify(photos)}::jsonb, ${['ai','pricelist'].includes(b.source) ? b.source : 'manual'}, ${role}, ${b.sourceFile ? String(b.sourceFile).slice(0, 300) : null})`);
   queries.push(...pointQueries);
   for (const a of alerts) queries.push(sql`insert into alerts (id, product_id, supplier_id, invoice_id, product_name, unit, from_price, to_price, diff, pct, qty, invoice_number, date) values (${a.id}, ${a.productId}, ${supplierId}, ${invoiceId}, ${a.productName}, ${a.unit}, ${a.from}, ${a.to}, ${a.diff}, ${a.pct}, ${a.qty}, ${number}, ${date})`);
   await sql.transaction(queries);
 
   let emailed = false;
-  if (alerts.length && settings.alertEmail && process.env.RESEND_API_KEY) emailed = await sendAlertEmail(settings, supplierName, number, date, alerts, request);
+  if (!b.historic && alerts.length && settings.alertEmail && process.env.RESEND_API_KEY) emailed = await sendAlertEmail(settings, supplierName, number, date, alerts, request);
 
   return json({ ok: true, id: invoiceId, supplier: supplierName, number, total, lines: invLines.length, ups: alerts.length, news, emailed });
 });
