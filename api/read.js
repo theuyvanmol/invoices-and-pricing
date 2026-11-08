@@ -60,7 +60,9 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     if (res.status === 400 && /API key/i.test(t)) return fail('The Gemini key is not valid. Check GEMINI_API_KEY in the Vercel project settings.', 502);
     if (res.status === 403) return fail('The Gemini key is not allowed to use this service. Check it in Google AI Studio.', 502);
     if (res.status === 429) return fail('The free reading limit was reached for now. Wait a minute and try again, or enter it by hand.', 503);
-    return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502);
+    let why = '';
+    try { why = JSON.parse(t).error?.message || ''; } catch {}
+    return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502, { detail: `Gemini ${res.status} (${model}): ${why.slice(0, 300)}` });
   }
   const out = await res.json();
   const text = (out.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
