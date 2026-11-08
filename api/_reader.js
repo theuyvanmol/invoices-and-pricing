@@ -65,7 +65,7 @@ Rules:
 - pieces is the number of items, packs or joints delivered. Leave it null when it is the same as quantity.
 - lineTotal is the line value printed on the invoice.
 - unit is short and lowercase: kg, g, l, ml, each, box, case, tray, bunch, bag, dozen. If sold by pack, include the pack, e.g. "case 6x1l".
-- Skip delivery charges, deposits, discounts and tax lines. Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
+- Skip delivery charges, deposits, discounts, tax lines and free lines priced at 0.00 (promo magazines, samples). Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
 - Use plain product names without product codes. If a line clearly matches a known product below from the same supplier, reuse that exact name and unit so the price history stays linked.
 - Dates on invoices may be day/month/year. Return ISO YYYY-MM-DD.
 - If the photos are not an invoice or cannot be read, set readable to false and explain briefly in problem.
