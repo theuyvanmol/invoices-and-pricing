@@ -3,7 +3,9 @@ import { route, json, fail, sql } from './_lib.js';
 
 // Reads invoices with Google Gemini (free tier). It never calls Anthropic, so it never uses Claude credit.
 const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
-let model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+let model = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+// Tested backups, used when the main model is busy. Others found on the account are tried after these.
+const BACKUPS = ['gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite'];
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 
 // All free Flash models this key can use, best first (full Flash before Lite, newest first).
@@ -22,7 +24,7 @@ async function callGemini(parts, only) {
   const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } });
   const started = Date.now();
   const tried = new Set();
-  let queue = [only || model], listed = !!only, last = null;
+  let queue = only ? [only] : [model, ...BACKUPS], listed = !!only, last = null;
   callGemini.log = [];
   while (queue.length && Date.now() - started < 48000) {
     const m = queue.shift();
@@ -32,7 +34,7 @@ async function callGemini(parts, only) {
       const left = 50000 - (Date.now() - started);
       if (left < 6000) break;
       try {
-        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body, signal: AbortSignal.timeout(Math.min(30000, left - 2000)) });
+        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body, signal: AbortSignal.timeout(Math.min(20000, left - 2000)) });
       } catch (e) { callGemini.log.push(`${m}:timeout:${Math.round((Date.now() - started) / 1000)}s`); last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
       callGemini.log.push(`${m}:${last.status}:${Math.round((Date.now() - started) / 1000)}s`);
       if (last.ok) { model = m; return last; }
