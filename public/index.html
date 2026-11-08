@@ -228,6 +228,19 @@ table.list .num{text-align:right;white-space:nowrap}
 .howto li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start}
 .howto li::before{counter-increment:s;content:counter(s);width:26px;height:26px;border-radius:99px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:13px;font-family:var(--f-mono)}
 
+.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;width:100%;max-width:760px}
+.choice{display:grid;gap:6px;justify-items:center;align-content:center;text-align:center;padding:26px 16px;border-radius:18px;border:2px dashed var(--line);background:var(--surface-2);position:relative;cursor:pointer;color:var(--ink);font:inherit;min-height:170px}
+.choice:hover{border-color:var(--accent)}
+.choice svg{width:40px;height:40px;color:var(--accent)}
+.choice b{font-family:var(--f-display);font-size:18px}
+.choice input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.choice.solid{border-style:solid}
+.pdfthumb{display:grid;place-items:center;height:100%;font-family:var(--f-mono);font-weight:600;color:var(--accent);background:var(--accent-soft)}
+.pdfview{width:100%;height:70vh;min-height:420px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.pastebox{display:grid;gap:8px;margin-top:12px;padding:12px;border-radius:12px;background:var(--surface-2)}
+.pastebox textarea{min-height:120px;font-family:var(--f-mono);font-size:13px;resize:vertical}
+.kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:5px;padding:1px 5px;background:var(--surface)}
+@media (max-width:640px){.choices{grid-template-columns:1fr}.choice{min-height:120px;padding:18px 14px}}
 @media (max-width:1050px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.reviewgrid{grid-template-columns:minmax(0,1fr)}.photostrip{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
 @media (max-width:860px){
   .app{display:block}
@@ -304,7 +317,7 @@ table.list .num{text-align:right;white-space:nowrap}
 <div class="app">
   <aside class="side" aria-label="Main navigation">
     <div class="brand"><div class="brand-mark">I&amp;P</div><div><b>Invoices &amp; Pricing</b><small id="sideRest">Supplier price control</small></div></div>
-    <button class="btn primary scanbig" data-go="scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>Scan invoice</button>
+    <button class="btn primary scanbig" data-go="scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>Add invoice</button>
     <nav id="sideNav"></nav>
     <div class="side-foot" id="sideFoot">Connecting…</div>
   </aside>
@@ -350,8 +363,8 @@ const I={
  gallery:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>',
  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>'
 };
-const VIEWS={home:'Overview',pricelist:'Supplier price list',products:'Products & prices',compare:'Compare suppliers',scan:'Scan invoice',alerts:'Price alerts',invoices:'Invoices',suppliers:'Suppliers',settings:'Settings'};
-const SUBS={home:'Everything you are paying, updated from every invoice your managers scan.',pricelist:'Every supplier, the products you buy from them and the current price per unit.',products:'Latest and previous price for every product from every supplier.',compare:'The same product from different suppliers, cheapest first.',scan:'Take a photo of the invoice. It is read automatically and you check before saving.',alerts:'Every price increase found on an invoice, waiting for your review.',invoices:'Every scanned invoice with its photo, searchable by supplier and number.',suppliers:'Who you buy from and how their prices are moving.',settings:'Alert rules, email, PINs and how your team uses the app.'};
+const VIEWS={home:'Overview',pricelist:'Supplier price list',products:'Products & prices',compare:'Compare suppliers',scan:'Add invoice',alerts:'Price alerts',invoices:'Invoices',suppliers:'Suppliers',settings:'Settings'};
+const SUBS={home:'Everything you are paying, updated from every invoice your managers scan.',pricelist:'Every supplier, the products you buy from them and the current price per unit.',products:'Latest and previous price for every product from every supplier.',compare:'The same product from different suppliers, cheapest first.',scan:'Take a photo, upload a photo or PDF, or type it in. You check everything before it is saved.',alerts:'Every price increase found on an invoice, waiting for your review.',invoices:'Every scanned invoice with its photo, searchable by supplier and number.',suppliers:'Who you buy from and how their prices are moving.',settings:'Alert rules, email, PINs and how your team uses the app.'};
 
 /* ---------- state ---------- */
 const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'Geisha Restaurant',alertEmail:'',pinsEnabled:false},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
@@ -475,7 +488,7 @@ function vHome(){
   const wk=new Date(now);wk.setDate(now.getDate()-7);const wkISO=wk.toISOString().slice(0,10);
   const weekInv=realInv().filter(i=>(i.date||'')>=wkISO).length;
   const extraCost=oa.reduce((a,x)=>a+Math.max(0,num(x.diff))*Math.max(1,num(x.qty)||1),0);
-  let h=head('home',`<button class="btn primary hide-m" data-go="scan">${I.scan}Scan invoice</button>`)+stateBanner();
+  let h=head('home',`<button class="btn primary hide-m" data-go="scan">${I.scan}Add invoice</button>`)+stateBanner();
   if(oa.length)h+=`<div class="banner alert"><div class="grow"><b>${oa.length} price increase${oa.length>1?'s':''} need${oa.length>1?'':'s'} your review.</b><div class="small">About ${money(extraCost)} extra on the last order${oa.length>1?'s':''} at the quantities bought.</div></div><button class="btn sm" data-go="alerts">Review now</button></div>`;
   h+=`<div class="kpis">
     <button class="kpi" data-go="invoices"><span class="label">Spend this month</span><span class="v">${loading?'…':money(monthSpend)}</span><small>${realInv().filter(i=>(i.date||'')>=mStart).length} invoices</small></button>
@@ -603,11 +616,11 @@ function vAlerts(){
 function vInvoices(){
   const q=norm(UI.iq);
   const list=S.inv.filter(i=>(UI.isup==='all'||i.supplierId===UI.isup)&&(!q||norm((i.number||'')+' '+supName(i.supplierId)).includes(q))).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||0)-(a.createdAt||0));
-  let h=head('invoices',`<button class="btn primary hide-m" data-go="scan">${I.scan}Scan invoice</button>`)+stateBanner();
+  let h=head('invoices',`<button class="btn primary hide-m" data-go="scan">${I.scan}Add invoice</button>`)+stateBanner();
   h+=`<div class="toolbar"><input class="field search" id="iq" type="search" placeholder="Search invoice number or supplier" value="${esc(UI.iq)}" aria-label="Search invoices"><select class="field" id="isup" aria-label="Supplier">${supOptions(UI.isup,'All suppliers')}</select></div>`;
   if(!list.length)return h+`<div class="panel"><div class="empty"><b>${S.inv.length?'No invoices match':'No invoices yet'}</b><p>${S.inv.length?'Try another search.':'Scanned invoices are kept here with their photos.'}</p></div></div>`;
   const total=list.reduce((a,i)=>a+num(i.total),0);
-  h+=`<p class="small muted" style="margin-bottom:10px">${list.length} invoices · ${money(total)}</p><div class="panel"><div class="rows">${list.map(i=>{const al=S.alerts.filter(a=>a.invoiceId===i.id&&a.status!=='reviewed').length;return `<button class="row" data-invoice="${esc(i.id)}"><span class="t">${esc(supName(i.supplierId))}</span><span class="r price">${money(i.total)}</span><span class="s"><span class="mono">${esc(i.number||'No number')}</span> · ${fmtDate(i.date)} · ${(i.lines||[]).length} items${i.photos?.length?' · 📷':''}${i.source==='pricelist'?' · <b>Price list</b>':''}</span><span class="r">${al?`<span class="pill up">${al} increase${al>1?'s':''}</span>`:''}</span></button>`}).join('')}</div></div>`;
+  h+=`<p class="small muted" style="margin-bottom:10px">${list.length} invoices · ${money(total)}</p><div class="panel"><div class="rows">${list.map(i=>{const al=S.alerts.filter(a=>a.invoiceId===i.id&&a.status!=='reviewed').length;return `<button class="row" data-invoice="${esc(i.id)}"><span class="t">${esc(supName(i.supplierId))}</span><span class="r price">${money(i.total)}</span><span class="s"><span class="mono">${esc(i.number||'No number')}</span> · ${fmtDate(i.date)} · ${(i.lines||[]).length} items${i.photos?.length?(i.photos.some(a=>/\.pdf/i.test(a))?' · PDF':' · 📷'):''}${i.source==='pricelist'?' · <b>Price list</b>':''}</span><span class="r">${al?`<span class="pill up">${al} increase${al>1?'s':''}</span>`:''}</span></button>`}).join('')}</div></div>`;
   return h;
 }
 
@@ -648,17 +661,20 @@ function vScan(){
   let h=(pl?`<div class="pagehead"><div><h1>Add supplier prices</h1><p>For a new supplier's price list or quote, or prices agreed by phone. Photograph it or type the products and prices in. These prices go into the price list and are compared with your other suppliers. They are not counted as spend.</p></div><button class="btn sm" data-act="resetScan">Back to invoices</button></div>`:head('scan'))+stateBanner();
   const ro=false;
   const st=scan.step;
-  h+=`<div class="steps" style="margin-bottom:16px">${[['capture','1 Photo'],['reading','2 Read'],['review','3 Check'],['done','4 Saved']].map(([k,l])=>`<span class="${st===k||(st==='saving'&&k==='review')?'on':''}">${l}</span>`).join('')}</div>`;
+  if(!(scan.source==='manual'&&st!=='capture'&&st!=='done'))h+=`<div class="steps" style="margin-bottom:16px">${[['capture','1 Photo'],['reading','2 Read'],['review','3 Check'],['done','4 Saved']].map(([k,l])=>`<span class="${st===k||(st==='saving'&&k==='review')?'on':''}">${l}</span>`).join('')}</div>`;
   if(st==='capture'){
     const max=MAX_PAGES;
+    const thumb=(p,i)=>`<div class="thumb">${p.pdf?'<div class="pdfthumb">PDF</div>':`<img src="${p.url}" alt="Invoice page ${i+1}">`}<span class="pg">p.${i+1}</span><button data-rmphoto="${i}" aria-label="Remove page ${i+1}">×</button></div>`;
+    const ACCEPT='image/*,application/pdf,.pdf';
     h+=`<section class="panel"><div class="scan-hero">
-      ${scan.photos.length?`<div class="thumbs">${scan.photos.map((p,i)=>`<div class="thumb"><img src="${p.url}" alt="Invoice page ${i+1}"><span class="pg">p.${i+1}</span><button data-rmphoto="${i}" aria-label="Remove page ${i+1}">×</button></div>`).join('')}${scan.photos.length<max?`<label class="addpage">+ Add page<input type="file" accept="image/*" capture="environment" data-photo="1" aria-label="Add another page"></label>`:''}</div>
+      ${scan.photos.length?`<div class="thumbs">${scan.photos.map(thumb).join('')}${scan.photos.length<max?`<label class="addpage">+ Add page<input type="file" accept="${ACCEPT}" data-photo="1" aria-label="Add another page"></label>`:''}</div>
       <p class="small muted">Check every page is sharp and the prices are readable.</p>
-      <div class="savebar" style="justify-content:center;width:100%"><button class="btn" data-act="resetScan">Start over</button><button class="btn primary" data-act="read" ${ro?'disabled':''}>Read invoice →</button></div>`
-      :`<label class="cam">${I.scan}<b>${pl?'Take photo of price list':'Take photo of invoice'}</b><span class="small muted">Lay it flat, fill the frame, good light</span><input type="file" accept="image/*" capture="environment" data-photo="1" aria-label="Take a photo of the invoice"></label>
-      <label class="btn">${I.gallery}Choose from photos or files<input type="file" accept="image/*" multiple data-photo="1" hidden></label>`}
-      ${S.role&&S.features.ai===false?'<p class="notice">Automatic reading is not switched on yet. You can still add the photo and enter the lines by hand.</p>':''}
-      <button class="btn ghost sm" data-act="manual" ${ro?'disabled':''}>${pl?'Type the prices in':'Enter an invoice by hand instead'}</button>
+      <div class="savebar" style="justify-content:center;width:100%"><button class="btn" data-act="resetScan">Start over</button><button class="btn" data-act="manualKeep" ${ro?'disabled':''}>Type it in instead</button><button class="btn primary" data-act="read" ${ro?'disabled':''}>Read invoice →</button></div>`
+      :`<div class="choices">
+        <label class="choice">${I.scan}<b>${pl?'Photo or PDF of price list':'Photo or PDF of invoice'}</b><span class="small muted">On a phone: take a photo. On a laptop: pick a photo or a PDF from email.</span><input type="file" accept="${ACCEPT}" multiple data-photo="1" aria-label="Take or choose a photo or PDF"></label>
+        <button class="choice" data-act="manual" ${ro?'disabled':''}>${I.invoices}<b>${pl?'Type the prices in':'Type it in'}</b><span class="small muted">Enter the products and prices yourself, or paste rows from a spreadsheet.</span></button>
+      </div>`}
+      ${S.role&&S.features.ai===false?'<p class="notice">Automatic reading is not switched on yet. You can still add the photo and type the lines in.</p>':''}
     </div></section>`;
   }else if(st==='reading'){
     h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted">Uploading the photos, then finding the supplier, every product, quantity and price. This takes about 20–40 seconds.</p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
@@ -696,12 +712,14 @@ function reviewHTML(){
   const supSel=`<select class="field" id="dSup">${[...S.sup].sort((a,b)=>a.name.localeCompare(b.name)).map(s=>`<option value="${esc(s.id)}" ${d.supplierId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}<option value="new" ${d.supplierId==='new'?'selected':''}>+ New supplier…</option></select>`;
   const tot=draftTotal(),printed=num(d.printedTotal);
   const mismatch=printed>0&&Math.abs(printed-tot)>0.05;
-  return `<div class="reviewgrid">${scan.photos.length?`<aside class="panel" style="padding:12px"><div class="photostrip">${scan.photos.map((p,i)=>`<a href="${p.url}" target="_blank" rel="noopener"><img src="${p.url}" alt="Invoice page ${i+1}"></a>`).join('')}</div><p class="small muted" style="margin-top:8px">Tap a page to zoom.</p></aside>`:''}
+  return `<div class="reviewgrid">${scan.photos.length?`<aside class="panel" style="padding:12px"><div class="photostrip">${scan.photos.map((p,i)=>p.pdf?`<object class="pdfview" data="${p.url}" type="application/pdf"><a class="btn" href="${p.url}" target="_blank" rel="noopener">Open PDF</a></object>`:`<a href="${p.url}" target="_blank" rel="noopener"><img src="${p.url}" alt="Invoice page ${i+1}"></a>`).join('')}</div><p class="small muted" style="margin-top:8px">Tap a page to zoom.</p></aside>`:''}
   <section class="panel" style="${scan.photos.length?'':'grid-column:1/-1'}"><div class="panel-h"><h2>${scan.kind==='pricelist'?'Supplier prices':'Check the details'}</h2>${scan.source==='ai'?'<span class="pill new">Read automatically</span>':''}</div><div class="panel-b">
     ${scan.source==='ai'?'<p class="notice" style="margin-bottom:14px">Compare each line with the photo. Fix anything that was read wrong before saving.</p>':''}
     <div class="form2"><label class="fl"><span>Supplier</span>${supSel}</label><label class="fl" ${d.supplierId==='new'?'':'hidden'} id="dNewWrap"><span>New supplier name</span><input class="field" id="dNewSup" value="${esc(d.newSupplier||'')}" placeholder="Supplier name"></label><label class="fl"><span>${scan.kind==='pricelist'?'Reference (optional)':'Invoice number'}</span><input class="field mono" id="dNum" value="${esc(d.number)}" placeholder="e.g. INV-2041"></label><label class="fl"><span>${scan.kind==='pricelist'?'Prices valid from':'Invoice date'}</span><input class="field" id="dDate" type="date" value="${esc(d.date)}"></label></div>
     <div style="margin-top:16px" id="dLines">${d.lines.map((l,i)=>lineHTML(l,i)).join('')}</div>
-    <button class="btn sm" data-act="addLine" style="margin-top:10px">+ Add line</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-act="addLine">+ Add line</button><button class="btn sm" data-act="pasteToggle">Paste from spreadsheet</button>${d.supplierId!=='new'&&S.prod.some(p=>p.supplierId===d.supplierId)?`<button class="btn sm" data-act="loadSup">Load ${esc(supName(d.supplierId))}'s products</button>`:''}</div>
+    ${UI.paste?`<div class="pastebox"><label class="fl"><span>Paste rows copied from Excel, Google Sheets or an emailed invoice. One product per line: name, quantity, unit, price (in any order, the numbers are worked out).</span><textarea class="field" id="pasteText" placeholder="Tomatoes - Salad	1	box (6kg)	12.00&#10;Cucumber	4	each	0.75"></textarea></label><div style="display:flex;gap:8px"><button class="btn sm primary" data-act="pasteAdd">Add these lines</button><button class="btn sm" data-act="pasteToggle">Cancel</button></div></div>`:''}
+    <p class="small muted hide-m" style="margin-top:8px">Tip: press <span class="kbd">Enter</span> in a price box to start the next line. ${scan.kind==='pricelist'?'':'Lines with no quantity are not saved.'}</p>
     <div class="totals"><span><b>Total from lines</b>${printed?`<br><span class="small muted">Printed on invoice: ${money(printed)}</span>`:''}</span><span class="price" id="dTot">${money(tot)}</span></div>
     <div id="dMismatch">${mismatch?'<p class="notice" style="margin-top:10px;color:var(--warn)">The lines do not add up to the printed total. VAT, delivery or a missed line can cause this. Check the photo.</p>':''}</div>
     <div class="savebar"><button class="btn" data-act="resetScan" ${saving?'disabled':''}>Discard</button><button class="btn primary" data-act="save" ${saving?'disabled':''}>${saving?'Saving…':scan.kind==='pricelist'?'Save to price list':'Save invoice & check prices'}</button></div>
@@ -720,7 +738,7 @@ async function shrink(file){
 }
 async function addPhotos(files){
   const max=MAX_PAGES;
-  for(const f of files){if(scan.photos.length>=max){toast(`Up to ${max} pages per invoice.`);break}if(!/^image\//.test(f.type)&&!/\.(jpe?g|png|heic|webp)$/i.test(f.name)){toast('Please choose a photo (JPG or PNG).');continue}const b=await shrink(f);scan.photos.push({blob:b,url:URL.createObjectURL(b)})}
+  for(const f of files){if(scan.photos.length>=max){toast(`Up to ${max} pages per invoice.`);break}const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);if(isPdf){if(f.size>4*1024*1024){toast('That PDF is over 4 MB. Save it smaller or take a photo instead.');continue}const b=f.type?f:new Blob([f],{type:'application/pdf'});scan.photos.push({blob:b,url:URL.createObjectURL(b),pdf:true});continue}if(!/^image\//.test(f.type)&&!/\.(jpe?g|png|heic|webp)$/i.test(f.name)){toast('Choose a photo (JPG or PNG) or a PDF.');continue}const b=await shrink(f);scan.photos.push({blob:b,url:URL.createObjectURL(b)})}
   scan.error='';render();
 }
 
@@ -756,13 +774,52 @@ async function readInvoice(){
 }
 function startManual(){
   scan.source='manual';
-  scan.draft={supplierId:scan.kind==='pricelist'?(scan.supplierId||'new'):(S.sup[0]?.id||'new'),newSupplier:'',number:'',date:todayISO(),printedTotal:0,lines:[{name:'',unit:'kg',qty:'1',price:''}]};
+  scan.draft={supplierId:scan.kind==='pricelist'?(scan.supplierId||'new'):(S.sup[0]?.id||'new'),newSupplier:'',number:'',date:todayISO(),printedTotal:0,lines:[{name:'',unit:'',qty:'1',price:''}]};
   scan.step='review';render();
+}
+
+function parsePaste(text){
+  const out=[];
+  for(const raw of String(text||'').split(/\r?\n/)){
+    const row=raw.trim();if(!row)continue;
+    let cells=row.includes('\t')?row.split('\t'):/[;,]/.test(row)&&!/\d,\d{2}\b/.test(row)?row.split(/[;,]/):row.split(/\s{2,}/);
+    cells=cells.map(c=>c.trim()).filter(Boolean);
+    if(cells.length===1)cells=row.split(/\s+/);
+    const isNum=c=>/^£?\s*-?\d+(?:[.,]\d+)?$/.test(c.replace(/\s/g,''));
+    const nums=cells.filter(isNum).map(c=>parseFloat(c.replace(/[£\s]/g,'').replace(',','.')));
+    const texts=cells.filter(c=>!isNum(c));
+    if(!nums.length||!texts.length)continue; // header or note
+    let name,unit;
+    if(cells.length>texts.length+nums.length-1&&texts.length>3){ // words split on single spaces: drop short codes, last word may be the unit
+      const words=texts.filter((w,i)=>!(i===0&&/^[A-Z0-9]{1,5}$/.test(w)));
+      const UNITS=/^(each|single|sgl|kg|g|l|ml|box|case|pack|packet|punnet|bag|bunch|tray|dozen|tub|jar|bottle|tin|can)$/i;
+      unit=UNITS.test(words[words.length-1])?words.pop():'each';name=words.join(' ');
+    }else{
+      const t2=texts.filter((w,i)=>!(i===0&&texts.length>1&&/^[A-Z0-9]{1,6}$/.test(w)));
+      name=t2[0]||texts[0];unit=t2.find(t=>t!==name)||'each';
+    }
+    let qty=1,price=nums[nums.length-1];
+    if(nums.length>=3){const [a,b,c]=nums.slice(-3);if(Math.abs(a*b-c)<0.05){qty=a;price=b}else{qty=nums[0];price=nums[1]}}
+    else if(nums.length===2){qty=nums[0];price=nums[1]}
+    out.push({name,unit,qty:String(qty),price:String(round2(price))});
+  }
+  return out;
+}
+function supplierProductLines(supId){
+  return S.prod.filter(p=>p.supplierId===supId).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>({name:p.name,unit:p.unit,qty:'',price:latest(p)?String(latest(p).p):''}));
+}
+function fillFromKnown(i){
+  const l=scan.draft.lines[i];if(!l)return;
+  const p=matchProduct(scan.draft.supplierId,l.name);if(!p)return;
+  const el=document.querySelector(`#dLines .line[data-line="${i}"]`);
+  if(p.unit&&(!l.unit||l.unit==='kg')){l.unit=p.unit;const u=el?.querySelector('[data-lf="unit"]');if(u)u.value=p.unit}
+  const lp=latest(p);if(lp&&!l.price){l.price=String(lp.p);const pr=el?.querySelector('[data-lf="price"]');if(pr)pr.value=l.price}
+  refreshCmp();
 }
 
 async function saveInvoice(){
   const d=scan.draft;
-  const lines=d.lines.map(l=>({name:l.name.trim(),unit:(l.unit||'each').trim(),qty:num(l.qty),price:round2(num(l.price))})).filter(l=>l.name);
+  const lines=d.lines.map(l=>({name:l.name.trim(),unit:(l.unit||'each').trim(),qty:num(l.qty),price:round2(num(l.price))})).filter(l=>l.name&&(scan.kind==='pricelist'||l.qty>0));
   if(d.supplierId==='new'&&!(d.newSupplier||'').trim()){toast('Add the supplier name.');return}
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d.date||'')){toast('Add the invoice date.');return}
   if(!lines.length){toast('Add at least one product line.');return}
@@ -813,7 +870,7 @@ function showInvoice(id){
   const i=S.inv.find(x=>x.id===id);if(!i){toast('Invoice not found.');return}
   const ro=!isOwner();
   openSheet(`<div class="sheet-h"><div><span class="label">Invoice <span class="mono">${esc(i.number||'')}</span></span><h2 style="font-size:24px;margin-top:3px">${esc(supName(i.supplierId))}</h2><p class="muted small">${fmtDate(i.date)} · ${i.source==='manual'?'Entered by hand':'Scanned'}${i.demo?' · Example':''}</p></div><button class="closex" data-act="close" aria-label="Close">×</button></div>
-  ${(i.photos||[]).map((a,n)=>`<a href="${esc(a)}" target="_blank" rel="noopener"><img class="invoice-photo" src="${esc(a)}" alt="Invoice photo page ${n+1}" loading="lazy"></a>`).join('')||'<p class="notice" style="margin-bottom:12px">No photo stored for this invoice.</p>'}
+  ${(i.photos||[]).map((a,n)=>/\.pdf(\?|$)/i.test(a)?`<p style="margin-bottom:10px"><a class="btn" href="${esc(a)}" target="_blank" rel="noopener">Open PDF invoice</a></p>`:`<a href="${esc(a)}" target="_blank" rel="noopener"><img class="invoice-photo" src="${esc(a)}" alt="Invoice photo page ${n+1}" loading="lazy"></a>`).join('')||'<p class="notice" style="margin-bottom:12px">No photo stored for this invoice.</p>'}
   <div class="tablewrap"><table class="list"><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th></tr></thead><tbody>${(i.lines||[]).map(l=>{const a=S.alerts.find(x=>x.invoiceId===i.id&&x.productId===l.productId);return `<tr data-product="${esc(l.productId)}"><td><b>${esc(l.name)}</b> <span class="muted small">/${esc(l.unit)}</span>${a?` <span class="pill up">+${num(a.pct).toFixed(1)}%</span>`:''}</td><td class="num mono">${l.qty}</td><td class="num price">${money(l.price)}</td><td class="num mono">${money(l.qty*l.price)}</td></tr>`}).join('')}</tbody></table></div>
   <div class="totals"><b>Total</b><span class="price">${money(i.total)}</span></div>
   ${num(i.printedTotal)&&Math.abs(num(i.printedTotal)-num(i.total))>0.05?`<p class="small muted" style="margin-top:6px">Printed total ${money(i.printedTotal)} (may include VAT or delivery)</p>`:''}
@@ -865,8 +922,12 @@ document.addEventListener('click',async e=>{
   else if(a==='read')readInvoice();
   else if(a==='cancelRead'){if(readAbort)readAbort.cancelled=true;scan.step='capture';render()}
   else if(a==='manual')startManual();
+  else if(a==='manualKeep'){const keep=scan.photos;startManual();scan.photos=keep;lastView=null;render()}
+  else if(a==='pasteToggle'){UI.paste=!UI.paste;lastView=null;render();if(UI.paste)setTimeout(()=>$('#pasteText')?.focus(),30)}
+  else if(a==='pasteAdd'){const rows=parsePaste($('#pasteText')?.value);if(!rows.length){toast('No product rows found. Each row needs a name and a price.');return}scan.draft.lines=scan.draft.lines.filter(l=>l.name.trim()||num(l.price)).concat(rows);UI.paste=false;lastView=null;render();toast(`${rows.length} line${rows.length>1?'s':''} added. Check them before saving.`)}
+  else if(a==='loadSup'){const rows=supplierProductLines(scan.draft.supplierId);const have=new Set(scan.draft.lines.map(l=>norm(l.name)));scan.draft.lines=scan.draft.lines.filter(l=>l.name.trim()).concat(rows.filter(r=>!have.has(norm(r.name))));lastView=null;render();toast('Fill in the quantities. Change any price that is different.')}
   else if(a==='resetScan'){scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
-  else if(a==='addLine'){scan.draft.lines.push({name:'',unit:'kg',qty:'1',price:''});lastView=null;render();const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[ins.length-1]?.focus()}
+  else if(a==='addLine'){scan.draft.lines.push({name:'',unit:'',qty:'1',price:''});lastView=null;render();const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[ins.length-1]?.focus()}
   else if(a==='save')saveInvoice();
   else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
   else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});S.settings.pinsEnabled=true;toast('PIN sign-in is on. Tell your managers the manager PIN.');render();$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
@@ -876,6 +937,12 @@ document.addEventListener('click',async e=>{
   else if(a==='newPricelist'||a==='addTo'){scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'manual',kind:'pricelist',supplierId:t.dataset.sup||'new'};lastView=null;if(location.hash==='#scan')render();else location.hash='scan';window.scrollTo({top:0})}
 });
 document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target.matches&&e.target.matches('#dLines input')){
+    e.preventDefault();
+    const line=e.target.closest('.line'),f=e.target.dataset.lf,order=['name','qty','unit','price'];
+    if(f==='price'){const i=+line.dataset.line;if(i===scan.draft.lines.length-1){scan.draft.lines.push({name:'',unit:'',qty:'1',price:''});lastView=null;render()}const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[i+1]?.focus();return}
+    line.querySelector(`[data-lf="${order[order.indexOf(f)+1]}"]`)?.focus();return;
+  }
   if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet();
   if(e.key==='Enter'&&e.target.matches('tr[data-product]'))showProduct(e.target.dataset.product);
 });
@@ -887,7 +954,8 @@ document.addEventListener('change',e=>{
   if(t.id==='lsup'){UI.lsup=t.value;render()}
   if(t.id==='psort'){UI.psort=t.value;render()}
   if(t.id==='isup'){UI.isup=t.value;render()}
-  if(t.id==='dSup'){scan.draft.supplierId=t.value;$('#dNewWrap').hidden=t.value!=='new';refreshCmp()}
+  if(t.id==='dSup'){scan.draft.supplierId=t.value;lastView=null;render()}
+  if(t.dataset&&t.dataset.lf==='name'){fillFromKnown(+t.closest('.line').dataset.line)}
   if(t.id==='dDate'){scan.draft.date=t.value;refreshCmp()}
 });
 document.addEventListener('input',e=>{
