@@ -1,10 +1,29 @@
-// Sends invoice photos to Claude and returns the supplier, date and every line item as JSON.
+// Sends invoice photos to Google Gemini and returns the supplier, date and every line item as JSON.
 import { route, json, fail, sql } from './_lib.js';
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
+// Reads invoices with Google Gemini (free tier). It never calls Anthropic, so it never uses Claude credit.
+const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+let model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const API = 'https://generativelanguage.googleapis.com/v1beta';
+
+async function pickModel() {
+  const r = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': KEY } });
+  if (!r.ok) return null;
+  const list = ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name) && !/image|tts|audio|live|embed|thinking/i.test(m.name));
+  list.sort((a, b) => (/lite/i.test(a.name) - /lite/i.test(b.name)) || b.name.localeCompare(a.name, undefined, { numeric: true }));
+  return list[0]?.name.replace(/^models\//, '') || null;
+}
+
+async function callGemini(parts) {
+  const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } });
+  const go = () => fetch(`${API}/models/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body });
+  let r = await go();
+  if (r.status === 404) { const m = await pickModel(); if (m && m !== model) { model = m; r = await go(); } }
+  return r;
+}
 
 export const POST = route(async (request) => {
-  if (!process.env.ANTHROPIC_API_KEY) return fail('Automatic reading is not switched on yet (no Anthropic API key). Enter the invoice by hand for now.', 503, { code: 'NO_AI' });
+  if (!KEY) return fail('Automatic reading is not switched on yet (no Gemini key). Enter the invoice by hand for now.', 503, { code: 'NO_AI' });
   const { photos } = await request.json().catch(() => ({}));
   const urls = (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(String(u))).slice(0, 5);
   if (!urls.length) return fail('Add a photo of the invoice first.');
@@ -28,24 +47,23 @@ Known suppliers: ${sup.map((s) => s.name).join('; ') || 'none yet'}
 Known products (name (unit) — supplier):
 ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none yet'}`;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 8000,
-      messages: [{ role: 'user', content: [...urls.map((url) => ({ type: 'image', source: { type: 'url', url } })), { type: 'text', text: prompt }] }],
-    }),
-  });
+  const images = [];
+  for (const u of urls) {
+    const r = await fetch(u);
+    if (!r.ok) return fail('A photo could not be loaded. Take it again.', 422);
+    images.push({ inline_data: { mime_type: r.headers.get('content-type') || 'image/jpeg', data: Buffer.from(await r.arrayBuffer()).toString('base64') } });
+  }
+  const res = await callGemini([...images, { text: prompt }]);
   if (!res.ok) {
     const t = await res.text();
-    console.error('Anthropic error', res.status, t.slice(0, 500));
-    if (res.status === 401) return fail('The Anthropic API key is not valid. Check it in the Vercel project settings.', 502);
-    if (res.status === 429 || res.status === 529) return fail('The reading service is busy. Wait a minute and try again.', 503);
+    console.error('Gemini error', res.status, t.slice(0, 500));
+    if (res.status === 400 && /API key/i.test(t)) return fail('The Gemini key is not valid. Check GEMINI_API_KEY in the Vercel project settings.', 502);
+    if (res.status === 403) return fail('The Gemini key is not allowed to use this service. Check it in Google AI Studio.', 502);
+    if (res.status === 429) return fail('The free reading limit was reached for now. Wait a minute and try again, or enter it by hand.', 503);
     return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502);
   }
   const out = await res.json();
-  const text = (out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+  const text = (out.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
   let data = null;
   try { data = JSON.parse(text); } catch {
     const m = text.match(/\{[\s\S]*\}/);

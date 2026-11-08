@@ -4,7 +4,7 @@ import { json, fail, getSettings, saveSettings, hashPin, checkPin, makeSession, 
 
 const features = () => ({
   db: !!sql,
-  ai: !!process.env.ANTHROPIC_API_KEY,
+  ai: !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
   photos: !!process.env.BLOB_READ_WRITE_TOKEN,
   email: !!process.env.RESEND_API_KEY,
 });
