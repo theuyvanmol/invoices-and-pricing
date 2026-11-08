@@ -68,7 +68,7 @@ export const POST = route(async (request, { role, settings }) => {
     pointQueries.push(sql`insert into price_points (product_id, invoice_id, date, price, qty) values (${p.id}, ${invoiceId}, ${date}, ${l.price}, ${l.qty})`);
   }
   const total = round2(invLines.reduce((a, l) => a + l.qty * l.price, 0));
-  queries.push(sql`insert into invoices (id, supplier_id, number, date, lines, total, printed_total, photos, source, created_by) values (${invoiceId}, ${supplierId}, ${number}, ${date}, ${JSON.stringify(invLines)}::jsonb, ${total}, ${Number(b.printedTotal) || null}, ${JSON.stringify(photos)}::jsonb, ${b.source === 'ai' ? 'ai' : 'manual'}, ${role})`);
+  queries.push(sql`insert into invoices (id, supplier_id, number, date, lines, total, printed_total, photos, source, created_by) values (${invoiceId}, ${supplierId}, ${number}, ${date}, ${JSON.stringify(invLines)}::jsonb, ${total}, ${Number(b.printedTotal) || null}, ${JSON.stringify(photos)}::jsonb, ${['ai','pricelist'].includes(b.source) ? b.source : 'manual'}, ${role})`);
   queries.push(...pointQueries);
   for (const a of alerts) queries.push(sql`insert into alerts (id, product_id, supplier_id, invoice_id, product_name, unit, from_price, to_price, diff, pct, qty, invoice_number, date) values (${a.id}, ${a.productId}, ${supplierId}, ${invoiceId}, ${a.productName}, ${a.unit}, ${a.from}, ${a.to}, ${a.diff}, ${a.pct}, ${a.qty}, ${number}, ${date})`);
   await sql.transaction(queries);
