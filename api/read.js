@@ -6,20 +6,41 @@ const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 let model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 
-async function pickModel() {
-  const r = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': KEY } });
-  if (!r.ok) return null;
-  const list = ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name) && !/image|tts|audio|live|embed|thinking/i.test(m.name));
-  list.sort((a, b) => (/lite/i.test(a.name) - /lite/i.test(b.name)) || b.name.localeCompare(a.name, undefined, { numeric: true }));
-  return list[0]?.name.replace(/^models\//, '') || null;
+// All free Flash models this key can use, best first (full Flash before Lite, newest first).
+async function listModels() {
+  try {
+    const r = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return [];
+    const list = ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name) && !/image|tts|audio|live|embed|thinking|preview-\d{2}-\d{2}$/i.test(m.name));
+    list.sort((a, b) => (/lite/i.test(a.name) - /lite/i.test(b.name)) || b.name.localeCompare(a.name, undefined, { numeric: true }));
+    return list.map((m) => m.name.replace(/^models\//, ''));
+  } catch { return []; }
 }
 
+// Tries the preferred model, then other free Flash models when Google is busy (503), rate-limited (429) or the model is gone (404).
 async function callGemini(parts) {
   const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } });
-  const go = () => fetch(`${API}/models/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body });
-  let r = await go();
-  if (r.status === 404) { const m = await pickModel(); if (m && m !== model) { model = m; r = await go(); } }
-  return r;
+  const started = Date.now();
+  const tried = new Set();
+  let queue = [model], listed = false, last = null;
+  while (queue.length && Date.now() - started < 48000) {
+    const m = queue.shift();
+    if (tried.has(m)) continue;
+    tried.add(m);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const left = 50000 - (Date.now() - started);
+      if (left < 6000) break;
+      try {
+        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body, signal: AbortSignal.timeout(Math.min(30000, left - 2000)) });
+      } catch (e) { last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
+      if (last.ok) { model = m; return last; }
+      if (last.status === 503 && attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      break;
+    }
+    if (![404, 429, 500, 503, 504].includes(last.status)) return last;
+    if (!listed) { listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x)).slice(0, 4)); }
+  }
+  return last;
 }
 
 export const POST = route(async (request) => {
