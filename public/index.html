@@ -50,6 +50,7 @@ h1{font-size:clamp(24px,3.4vw,32px);font-weight:750}
 h2{font-size:19px;font-weight:700}
 h3{font-size:16px;font-weight:700}
 p{margin:0}
+a{color:var(--accent)}
 .mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)}
 .small{font-size:13px}
@@ -247,6 +248,9 @@ table.list .num{text-align:right;white-space:nowrap}
 .improw:first-child{border-top:0}
 .improw .fn{font-family:var(--f-mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .improw .acts{display:flex;gap:6px}
+.bigbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.bigbtn{min-height:54px;font-size:16px}
+@media (max-width:860px){.improw{padding:12px 14px}.improw .acts{flex-wrap:wrap}.kpis .kpi .v{font-size:20px}}
 @media (max-width:1050px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.reviewgrid{grid-template-columns:minmax(0,1fr)}.photostrip{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
 @media (max-width:860px){
   .app{display:block}
@@ -411,6 +415,7 @@ async function api(path,opts={}){
 let loading=false;
 async function load(){
   if(loading||!S.role)return;loading=true;
+  if(!DRV.st&&!DRV.loading){DRV.loading=true;drvLoad().then(()=>{DRV.loading=false;if(DRV.st?.connected&&!DRV.lastAuto){DRV.lastAuto=Date.now();drvSync(false)}})}
   try{
     const d=await api('/api/data');
     S.sup=d.suppliers;S.prod=d.products;S.inv=d.invoices;S.alerts=d.alerts;S.settings={...S.settings,...d.settings};S.role=d.role;
@@ -580,6 +585,59 @@ function downloadCsv(){
 
 /* ---------- bulk import ---------- */
 const IMP={items:[],running:false,stop:false,filter:'all',note:''};
+const DRV={st:null,busy:false,note:'',left:null,lastAuto:0};
+const touchOnly=()=>{try{return matchMedia('(pointer:coarse)').matches&&!matchMedia('(pointer:fine)').matches}catch(e){return false}};
+const ago=iso=>{if(!iso)return 'never';const m=Math.round((Date.now()-new Date(iso))/60000);return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} days ago`};
+async function drvLoad(){try{DRV.st=await api('/api/drive')}catch(e){DRV.st=DRV.st||null}schedule()}
+async function drvSync(untilDone){
+  if(DRV.busy||!DRV.st?.connected)return;
+  DRV.busy=true;DRV.note='';schedule();
+  try{
+    for(let i=0;i<500;i++){
+      const r=await api('/api/drive',{method:'POST',body:{action:'sync'}});
+      DRV.st=r.status;DRV.left=r.remaining;
+      if(r.processed.length)load();
+      if(r.limited){DRV.note='Google is busy or the free limit was reached. It will carry on automatically later.';break}
+      if(!untilDone||!r.remaining||DRV.stop)break;
+      schedule();
+    }
+  }catch(e){DRV.note=e.message}
+  DRV.busy=false;DRV.stop=false;schedule();
+}
+// watch the folder while the app is open: every 5 minutes on any screen
+setInterval(()=>{if(document.visibilityState==='visible'&&S.role&&DRV.st?.connected&&!DRV.busy&&Date.now()-DRV.lastAuto>5*60000){DRV.lastAuto=Date.now();drvSync(false)}},30000);
+function drvCheck(id){
+  const it=(DRV.st?.check||[]).find(x=>x.file_id===id);if(!it)return;
+  const d=it.draft||{supplierId:S.sup[0]?.id||'new',newSupplier:'',number:'',date:'',printedTotal:0,lines:[]};
+  const sup=d.supplierId!=='new'&&S.sup.some(x=>x.id===d.supplierId)?d.supplierId:(matchSupplier(d.newSupplier)?.id||'new');
+  scan={step:'review',photos:it.photo?[{url:it.photo,remote:it.photo,pdf:/\.pdf(\?|$)/i.test(it.photo)}]:[],
+    draft:{...d,supplierId:sup,date:d.date||todayISO(),lines:(d.lines&&d.lines.length?d.lines:[{name:'',unit:'',qty:'1',price:''}]).map(l=>({name:l.name,unit:l.unit,qty:String(l.qty??''),price:String(l.price??'')}))},
+    error:'Why it needs checking: '+(it.message||''),result:null,source:it.draft?'ai':'manual',kind:'invoice',driveFileId:id,driveHistoric:!!it.historic};
+  lastView=null;location.hash='scan';
+}
+function driveCard(){
+  const st=DRV.st,ro=!isOwner();
+  if(!st)return `<section class="panel"><div class="panel-h"><h2>Google Drive folder</h2><span class="pill flat">Loading…</span></div></section>`;
+  if(!st.connected)return `<section class="panel"><div class="panel-h"><h2>Google Drive folder</h2><span class="pill warn">Not connected</span></div><div class="panel-b">
+    <p class="small" style="margin-bottom:12px">Connect a shared Google Drive folder. Every photo or PDF put in it, from any phone or computer, is read and saved here automatically.</p>
+    <label class="fl"><span>Folder link</span><input class="field" id="drvLink" placeholder="https://drive.google.com/drive/folders/…" value="${esc(UI.drvLink||'')}" ${ro?'disabled':''}></label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px"><input type="checkbox" id="drvExisting" checked ${ro?'disabled':''}> Also import the invoices already in the folder</label>
+    <p class="small muted" style="margin-top:8px">The folder must be shared as <b>Anyone with the link – Viewer</b>.</p>
+    <div class="bigbtns" style="margin-top:12px"><button class="btn primary bigbtn" data-act="drvConnect" ${ro||DRV.busy?'disabled':''}>${DRV.busy?'Connecting…':'Connect folder'}</button></div>
+    ${DRV.note?`<p class="notice" style="margin-top:12px">${esc(DRV.note)}</p>`:''}</div></section>`;
+  const c=st.counts||{};
+  return `<section class="panel"><div class="panel-h"><h2>Google Drive folder</h2><span class="pill down">Watching</span></div><div class="panel-b">
+    <p class="small" style="margin-bottom:10px"><a href="https://drive.google.com/drive/folders/${esc(st.folderId)}" target="_blank" rel="noopener">Open the folder in Google Drive ↗</a><br><span class="muted">Checked ${ago(st.lastSync)}. New files are picked up every few minutes while the app is open on any device, and every morning otherwise.</span></p>
+    <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px"><div class="kpi"><span class="label">Saved</span><span class="v">${c.saved||0}</span></div><div class="kpi ${(c.check||0)+(c.failed||0)?'alert':''}"><span class="label">To check</span><span class="v">${(c.check||0)+(c.failed||0)}</span></div><div class="kpi"><span class="label">Waiting</span><span class="v">${DRV.left==null?'–':DRV.left}</span></div></div>
+    ${DRV.busy?`<div class="share-l"><span>Reading invoices from Google Drive…</span><span class="spinner" style="width:18px;height:18px;border-width:3px"></span></div>`:''}
+    ${DRV.note?`<p class="notice" style="margin:10px 0">${esc(DRV.note)}</p>`:''}
+    <div class="bigbtns">${DRV.busy?'<button class="btn bigbtn" data-act="drvStop">Pause</button>':`<button class="btn primary bigbtn" data-act="drvSyncAll">Check Drive now</button>`}${ro?'':'<button class="btn ghost" data-act="drvDisconnect">Disconnect</button>'}</div>
+  </div></section>`;
+}
+function driveChecks(){
+  const list=DRV.st?.check||[];if(!list.length)return '';
+  return `<section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Needs checking · from Google Drive</h2><span class="pill warn">${list.length}</span></div><div class="rows">${list.map(x=>`<div class="improw"><span class="fn">${esc(x.name)}</span><span class="acts">${x.status==='failed'?'<span class="pill up">Failed</span>':'<span class="pill warn">Check</span>'}</span><span class="small muted" style="grid-column:1/-1">${esc(x.message||'')}</span><span class="acts" style="grid-column:1/-1">${x.status==='check'||x.photo?`<button class="btn sm primary" data-drvcheck="${esc(x.file_id)}">Check and save</button>`:''}<button class="btn sm" data-drvretry="${esc(x.file_id)}">Read again</button><button class="btn sm ghost" data-drvignore="${esc(x.file_id)}">Ignore</button></span></div>`).join('')}</div></section>`;
+}
 const impKey=f=>`${f.webkitRelativePath||f.name}|${f.size}`;
 const isPdfFile=f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name);
 const isImgFile=f=>/^image\//.test(f.type)||/\.(jpe?g|png|webp|heic)$/i.test(f.name);
@@ -667,20 +725,23 @@ function vImport(){
   const c=impCounts(),total=IMP.items.length,doneN=c.saved+c.check+c.skipped+c.failed;
   let h=head('import')+stateBanner();
   if(S.features.ai===false)h+='<div class="banner alert"><div class="grow"><b>Automatic reading is off.</b> Bulk import needs it. Add the Gemini key first.</div></div>';
+  if(!DRV.st&&!DRV.loading){DRV.loading=true;drvLoad().then(()=>DRV.loading=false)}
+  h+=driveChecks().replace('style="margin-top:16px"','style="margin-bottom:16px"');
   h+=`<div class="grid2"><div class="stack">
-  <section class="panel"><div class="panel-h"><h2>1. Choose the invoices</h2></div><div class="panel-b">
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="btn primary">${I.import}Choose a folder<input type="file" webkitdirectory directory multiple data-imp="1" hidden></label><label class="btn">Choose files<input type="file" multiple accept="image/*,application/pdf,.pdf" data-imp="1" hidden></label></div>
-    <p class="small muted" style="margin-top:10px">Photos (JPG, PNG) and PDFs. One invoice per file. You can add more files at any time. Files already imported are skipped automatically.</p>
+  ${driveCard()}
+  <section class="panel"><div class="panel-h"><h2>Upload from this ${touchOnly()?'phone':'computer'}</h2></div><div class="panel-b">
+    <div class="bigbtns">${touchOnly()?'':`<label class="btn primary bigbtn">${I.import}Upload a folder<input type="file" webkitdirectory directory multiple data-imp="1" hidden></label>`}<label class="btn ${touchOnly()?'primary ':''}bigbtn">${I.gallery}Upload files<input type="file" multiple accept="image/*,application/pdf,.pdf" data-imp="1" hidden></label></div>
+    <p class="small muted" style="margin-top:10px">Photos (JPG, PNG) and PDFs, one invoice per file. ${touchOnly()?'On a phone you can select many photos at once, or pick files from the Files or Google Drive app.':'Pick the whole folder, e.g. an unzipped Google Drive download.'} Files already imported are skipped.</p>
   </div></section>
-  <section class="panel"><div class="panel-h"><h2>2. Import</h2>${IMP.running?'<span class="pill new">Running</span>':''}</div><div class="panel-b">
+  ${IMP.items.length?`<section class="panel"><div class="panel-h"><h2>Upload progress</h2>${IMP.running?'<span class="pill new">Running</span>':''}</div><div class="panel-b">
     ${total?`<div class="share-l"><span>${doneN} of ${total} done</span><b class="mono">${total?Math.round(doneN/total*100):0}%</b></div><div class="progress"><span style="width:${total?doneN/total*100:0}%"></span></div>
     <div class="chips" style="margin:12px 0 0">${[['all',`All ${total}`],['waiting',`Waiting ${c.waiting+c.reading}`],['saved',`Saved ${c.saved}`],['check',`Needs checking ${c.check}`],['skipped',`Skipped ${c.skipped}`],['failed',`Failed ${c.failed}`]].map(([k,l])=>`<button class="chip ${IMP.filter===k?'on':''}" data-impf="${k}">${l}</button>`).join('')}</div>`:'<p class="muted">No files chosen yet.</p>'}
     ${IMP.note?`<p class="notice" style="margin-top:12px">${esc(IMP.note)}</p>`:''}
     <div class="savebar">${IMP.running?'<button class="btn" data-act="impPause">Pause</button>':`<button class="btn" data-act="impClear" ${total&&!IMP.running?'':'disabled'}>Clear list</button><button class="btn primary" data-act="impStart" ${c.waiting&&S.features.ai!==false?'':'disabled'}>${doneN?'Continue':'Start'} import</button>`}</div>
-  </div></section></div>
+  </div></section>`:''}</div>
   <div class="stack"><section class="panel"><div class="panel-h"><h2>Before you start</h2></div><div class="panel-b"><ol class="howto">
-    <li><span><b>Get the Google Drive folder onto this laptop.</b> In Google Drive, right-click the folder → <b>Download</b>. Drive makes a .zip. Open it to unzip, then choose the unzipped folder here. Or, with Google Drive for desktop installed, choose the folder straight from the Google Drive drive.</span></li>
-    <li><span><b>Keep this page open</b> and the laptop plugged in. Each invoice takes about 10 seconds, so 1,000 take around 3 hours. You can use other tabs meanwhile.</span></li>
+    <li><span><b>Easiest: connect the Google Drive folder.</b> Managers drop photos or PDFs into it from their phone (Google Drive app → + → Scan or Upload). The app picks them up by itself.</span></li>
+    <li><span>Each invoice takes about 10 seconds. For a big batch (1,000 ≈ 3 hours), press <b>Check Drive now</b> on a laptop and leave this page open. Otherwise it carries on a little every few minutes and every morning.</span></li>
     <li><span>Old invoices build each product's price history. <b>They do not create price alerts.</b> Only new invoices do.</span></li>
     <li><span>Google's free plan has a daily limit. If it is reached, the import pauses. Continue the next day with the same folder.</span></li>
     <li><span>An invoice that does not add up, or is missing a date or supplier, is <b>not saved</b>. It waits under <b>Needs checking</b> until you fix it.</span></li>
@@ -800,7 +861,7 @@ function vScan(){
         <button class="choice" data-act="manual" ${ro?'disabled':''}>${I.invoices}<b>${pl?'Type the prices in':'Type it in'}</b><span class="small muted">Enter the products and prices yourself, or paste rows from a spreadsheet.</span></button>
       </div>`}
       ${S.role&&S.features.ai===false?'<p class="notice">Automatic reading is not switched on yet. You can still add the photo and type the lines in.</p>':''}
-      ${scan.photos.length||pl?'':'<button class="btn ghost sm hide-m" data-go="import">Lots of old invoices, e.g. a Google Drive folder? Import them all at once →</button>'}
+      ${scan.photos.length||pl?'':`<button class="btn bigbtn" data-go="import" style="width:100%;max-width:760px">${I.import}Import many / Google Drive folder</button>`}
     </div></section>`;
   }else if(st==='reading'){
     h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted">Uploading the photos, then finding the supplier, every product, quantity and price. This takes about 20–40 seconds.</p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
@@ -954,9 +1015,10 @@ async function saveInvoice(){
   try{
     let photos=[];
     if(scan.photos.length){try{photos=await uploadPhotos()}catch(e){if(!confirmNoPhoto){scan.step='review';scan.error='The photo could not be uploaded ('+e.message+'). Tap Save again to save the invoice without its photo.';confirmNoPhoto=true;render();return}}}
-    const r=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines,photos,historic:!!scan.importKey,sourceFile:scan.importKey||undefined,source:scan.kind==='pricelist'?'pricelist':scan.source,allowDuplicate:!!d.dupOk}});
+    const r=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines,photos,historic:!!scan.importKey||!!scan.driveHistoric,sourceFile:scan.importKey||(scan.driveFileId?'drive:'+scan.driveFileId:undefined),driveFileId:scan.driveFileId||undefined,source:scan.kind==='pricelist'?'pricelist':scan.source,allowDuplicate:!!d.dupOk}});
     scan.photos.forEach(p=>URL.revokeObjectURL(p.url));confirmNoPhoto=false;
-    const ik=scan.importKey;
+    const ik=scan.importKey,dk=scan.driveFileId;
+    if(dk){scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';toast('Saved.');load();drvLoad();return}
     scan={step:'done',photos:[],draft:null,error:'',source:'ai',result:{...r,kind:scan.kind}};
     if(ik){const it=IMP.items.find(x=>x.key===ik);if(it){it.status='saved';it.msg=`${r.supplier} · ${money(r.total)}`}scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';toast('Saved. Next one to check is below.');load();return}
     render();load();
@@ -1032,8 +1094,11 @@ function refreshCmp(){
 
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
+  const t=e.target.closest('[data-drvcheck],[data-drvretry],[data-drvignore],[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
   if(!t)return;
+  if(t.dataset.drvcheck){drvCheck(t.dataset.drvcheck);return}
+  if(t.dataset.drvretry){try{await api('/api/drive',{method:'POST',body:{action:'retry',fileId:t.dataset.drvretry}});await drvLoad();drvSync(false)}catch(e){toast(e.message)}return}
+  if(t.dataset.drvignore){try{await api('/api/drive',{method:'POST',body:{action:'ignore',fileId:t.dataset.drvignore}});drvLoad()}catch(e){toast(e.message)}return}
   if(t.dataset.impf){IMP.filter=t.dataset.impf;render();return}
   if(t.dataset.impcheck){impCheck(t.dataset.impcheck);return}
   if(t.dataset.impretry){const it=IMP.items.find(x=>x.key===t.dataset.impretry);if(it){it.status='waiting';it.msg='';render()}return}
@@ -1058,13 +1123,17 @@ document.addEventListener('click',async e=>{
   else if(a==='pasteToggle'){UI.paste=!UI.paste;lastView=null;render();if(UI.paste)setTimeout(()=>$('#pasteText')?.focus(),30)}
   else if(a==='pasteAdd'){const rows=parsePaste($('#pasteText')?.value);if(!rows.length){toast('No product rows found. Each row needs a name and a price.');return}scan.draft.lines=scan.draft.lines.filter(l=>l.name.trim()||num(l.price)).concat(rows);UI.paste=false;lastView=null;render();toast(`${rows.length} line${rows.length>1?'s':''} added. Check them before saving.`)}
   else if(a==='loadSup'){const rows=supplierProductLines(scan.draft.supplierId);const have=new Set(scan.draft.lines.map(l=>norm(l.name)));scan.draft.lines=scan.draft.lines.filter(l=>l.name.trim()).concat(rows.filter(r=>!have.has(norm(r.name))));lastView=null;render();toast('Fill in the quantities. Change any price that is different.')}
-  else if(a==='resetScan'){if(scan.importKey){scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';return}scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
+  else if(a==='resetScan'){if(scan.importKey||scan.driveFileId){scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';return}scan.photos.forEach(p=>URL.revokeObjectURL(p.url));scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render()}
   else if(a==='addLine'){scan.draft.lines.push({name:'',unit:'',qty:'1',price:''});lastView=null;render();const ins=document.querySelectorAll('#dLines input[data-lf="name"]');ins[ins.length-1]?.focus()}
   else if(a==='save')saveInvoice();
   else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
   else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});S.settings.pinsEnabled=true;toast('PIN sign-in is on. Tell your managers the manager PIN.');render();$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
   else if(a==='signout')signOut();
   else if(a==='impStart')impRun();
+  else if(a==='drvConnect'){UI.drvLink=$('#drvLink').value.trim();DRV.busy=true;DRV.note='';render();try{const r=await api('/api/drive',{method:'POST',body:{action:'connect',link:UI.drvLink,importExisting:$('#drvExisting')?.checked!==false}});DRV.st=r.status;DRV.busy=false;toast(`Connected. ${r.files} file${r.files===1?'':'s'} found in the folder.`);if(r.files&&$('#drvExisting')?.checked!==false)drvSync(true);else render()}catch(e){DRV.busy=false;DRV.note=e.message;render()}}
+  else if(a==='drvSyncAll'){DRV.lastAuto=Date.now();drvSync(true)}
+  else if(a==='drvStop'){DRV.stop=true;DRV.note='Pausing after the current invoice…';render()}
+  else if(a==='drvDisconnect'){try{await api('/api/drive',{method:'POST',body:{action:'disconnect'}});DRV.st=null;drvLoad();toast('Folder disconnected.')}catch(e){toast(e.message)}}
   else if(a==='impPause'){IMP.stop=true;IMP.note='Pausing after the current invoice…';render()}
   else if(a==='impClear'){IMP.items=[];IMP.note='';render()}
   else if(a==='csv')downloadCsv();
@@ -1098,6 +1167,7 @@ document.addEventListener('input',e=>{
   const t=e.target;
   if(t.id==='pq'){UI.pq=t.value;render()}
   if(t.id==='lq'){UI.lq=t.value;render()}
+  if(t.id==='drvLink')UI.drvLink=t.value;
   if(t.id==='iq'){UI.iq=t.value;render()}
   if(t.id==='cq'){UI.cq=t.value;render()}
   if(t.id==='dNum'){scan.draft.number=t.value;scan.draft.dupOk=false}
