@@ -11,18 +11,18 @@ async function listModels() {
   try {
     const r = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': KEY }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return [];
-    const list = ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name) && !/image|tts|audio|live|embed|thinking|preview-\d{2}-\d{2}$/i.test(m.name));
+    const list = ((await r.json()).models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name) && !/image|tts|audio|live|embed|thinking|omni|preview/i.test(m.name));
     list.sort((a, b) => (/lite/i.test(a.name) - /lite/i.test(b.name)) || b.name.localeCompare(a.name, undefined, { numeric: true }));
     return list.map((m) => m.name.replace(/^models\//, ''));
   } catch { return []; }
 }
 
 // Tries the preferred model, then other free Flash models when Google is busy (503), rate-limited (429) or the model is gone (404).
-async function callGemini(parts) {
+async function callGemini(parts, only) {
   const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } });
   const started = Date.now();
   const tried = new Set();
-  let queue = [model], listed = false, last = null;
+  let queue = [only || model], listed = !!only, last = null;
   callGemini.log = [];
   while (queue.length && Date.now() - started < 48000) {
     const m = queue.shift();
@@ -47,7 +47,7 @@ async function callGemini(parts) {
 
 export const POST = route(async (request) => {
   if (!KEY) return fail('Automatic reading is not switched on yet (no Gemini key). Enter the invoice by hand for now.', 503, { code: 'NO_AI' });
-  const { photos } = await request.json().catch(() => ({}));
+  const { photos, model: testModel } = await request.json().catch(() => ({}));
   const urls = (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(String(u))).slice(0, 5);
   if (!urls.length) return fail('Add a photo of the invoice first.');
 
@@ -76,7 +76,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     if (!r.ok) return fail('A photo could not be loaded. Take it again.', 422);
     images.push({ inline_data: { mime_type: r.headers.get('content-type') || 'image/jpeg', data: Buffer.from(await r.arrayBuffer()).toString('base64') } });
   }
-  const res = await callGemini([...images, { text: prompt }]);
+  const res = await callGemini([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null);
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
