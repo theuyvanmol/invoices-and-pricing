@@ -23,6 +23,7 @@ async function callGemini(parts) {
   const started = Date.now();
   const tried = new Set();
   let queue = [model], listed = false, last = null;
+  callGemini.log = [];
   while (queue.length && Date.now() - started < 48000) {
     const m = queue.shift();
     if (tried.has(m)) continue;
@@ -32,7 +33,8 @@ async function callGemini(parts) {
       if (left < 6000) break;
       try {
         last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body, signal: AbortSignal.timeout(Math.min(30000, left - 2000)) });
-      } catch (e) { last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
+      } catch (e) { callGemini.log.push(`${m}:timeout:${Math.round((Date.now() - started) / 1000)}s`); last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
+      callGemini.log.push(`${m}:${last.status}:${Math.round((Date.now() - started) / 1000)}s`);
       if (last.ok) { model = m; return last; }
       if (last.status === 503 && attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
       break;
@@ -83,7 +85,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     if (res.status === 429) return fail('The free reading limit was reached for now. Wait a minute and try again, or enter it by hand.', 503);
     let why = '';
     try { why = JSON.parse(t).error?.message || ''; } catch {}
-    return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502, { detail: `Gemini ${res.status} (${model}): ${why.slice(0, 300)}` });
+    return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502, { detail: `Gemini ${res.status}: ${why.slice(0, 200)} | tried ${(callGemini.log || []).join(', ')}` });
   }
   const out = await res.json();
   const text = (out.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
@@ -95,3 +97,6 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   if (!data) return fail('The invoice could not be read clearly. Retake the photo flat and in good light, or enter it by hand.', 422);
   return json(data);
 });
+
+// Lists which free Gemini models this key can use (names only), to help diagnose reading problems.
+export const GET = route(async () => json({ preferred: model, models: KEY ? await listModels() : [] }));
