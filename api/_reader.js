@@ -61,7 +61,7 @@ Extract every purchased line item. Reply with ONLY a JSON object, no other text:
 {"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","category":"Chilled","packSize":"1 x 2.5kg","pieces":null,"quantity":1,"unit":"pack 2.5kg","unitPrice":13.45,"lineTotal":13.45,"vatRate":0,"promo":false,"regularPrice":null,"note":""}],"subtotalExVat":0,"invoiceTotal":0,"incomplete":false,"readable":true,"problem":""}
 Rules:
 - quantity × unitPrice must equal lineTotal, exactly as the invoice charges it. unitPrice is the price for ONE unit, before VAT/tax when both are shown. Never return the line total as unitPrice.
-- Weighed items (meat, fish, cheese): when the invoice shows a count AND a weight (e.g. Qty 2, Unit 3.44kg, Price 9.50, Value 32.68), set pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50 (per kg), lineTotal = 32.68.
+- Weighed items are ONLY lines priced per kg, where weight × price = value (e.g. meat: Qty 2, Unit 3.44kg, Price 9.50, Value 32.68 → pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50). A pack size such as "1 2.5kg", "4 2.5kg" or "1 1ltr" is NOT a weight to multiply: then quantity is the number of packs (QTY column), unit is the pack (e.g. "pack 2.5kg", "case 4x2.5kg") and pieces is null.
 - pieces is the number of items, packs or joints delivered. Leave it null when it is the same as quantity.
 - lineTotal is the line value printed on the invoice.
 - unit is short and lowercase: kg, g, l, ml, each, box, case, tray, bunch, bag, dozen. If sold by pack, include the pack, e.g. "case 6x1l".
@@ -105,7 +105,26 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     if (m) try { data = JSON.parse(m[0]); } catch {}
   }
   if (!data) return fail('The invoice could not be read clearly. Retake the photo flat and in good light, or enter it by hand.', 422);
-  return json(data);
+  return json(fixLines(data));
 }
 
 export const currentModel = () => model;
+
+// The printed line value is the truth. If quantity × price does not match it, repair the line
+// (e.g. a pack size like "1 x 2.5kg" wrongly read as 2.5 kg), or flag it for checking.
+export function fixLines(data) {
+  const n = (v) => { const x = Number(String(v ?? '').replace(/[^0-9.\-]/g, '')); return Number.isFinite(x) ? x : 0; };
+  const close = (a, b) => Math.abs(a - b) <= Math.max(0.02, b * 0.002);
+  for (const l of data.lines || []) {
+    const total = n(l.lineTotal), price = n(l.unitPrice);
+    let qty = n(l.quantity), pieces = n(l.pieces);
+    if (!(total > 0) || !(price > 0)) continue;
+    if (close(qty * price, total)) continue;
+    if (pieces > 0 && close(pieces * price, total)) { l.quantity = pieces; l.pieces = null; if (/kg|g$|ltr|ml|\bl\b/i.test(l.unit || '') && !/\s/.test(l.unit || '')) l.unit = 'each'; continue; }
+    const q = Math.round((total / price) * 1000) / 1000;
+    if (q > 0 && Math.abs(q - Math.round(q)) < 0.01) { l.quantity = Math.round(q); l.pieces = pieces && pieces !== Math.round(q) ? pieces : null; if (/^(kg|g|l|ml|ltr)$/i.test(l.unit || '')) l.unit = 'each'; continue; }
+    if (q > 0) { l.quantity = q; continue; }
+    l.mismatch = true;
+  }
+  return data;
+}

@@ -61,7 +61,7 @@ function toDraft(r, sups) {
   return {
     supplierId: sid || 'new', newSupplier: sid ? '' : String(r.supplier || ''), number: String(r.invoiceNumber || ''),
     date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : '', printedTotal: num(r.invoiceTotal), subtotal: num(r.subtotalExVat),
-    lines: (r.lines || []).map((l) => ({ name: String(l.name || '').trim(), unit: String(l.unit || 'each').trim(), pieces: num(l.pieces) || null, category: l.category || null, packSize: l.packSize || null, vat: l.vatRate ?? null, promo: !!l.promo, regularPrice: num(l.regularPrice) || null, note: l.note || null, qty: num(l.quantity), price: round2(num(l.unitPrice) || (num(l.lineTotal) && num(l.quantity) ? num(l.lineTotal) / num(l.quantity) : 0)) })).filter((l) => l.name),
+    lines: (r.lines || []).map((l) => ({ name: String(l.name || '').trim(), unit: String(l.unit || 'each').trim(), pieces: num(l.pieces) || null, category: l.category || null, packSize: l.packSize || null, vat: l.vatRate ?? null, promo: !!l.promo, regularPrice: num(l.regularPrice) || null, note: l.note || null, printed: num(l.lineTotal) || null, qty: num(l.quantity), price: round2(num(l.unitPrice) || (num(l.lineTotal) && num(l.quantity) ? num(l.lineTotal) / num(l.quantity) : 0)) })).filter((l) => l.name),
   };
 }
 
@@ -74,6 +74,8 @@ function problem(r, d) {
   if (!d.date) return 'Invoice date not found';
   if (d.date > today) return 'Date is in the future: ' + d.date;
   if (d.lines.some((l) => !(l.price > 0) || !(l.qty > 0))) return 'A line is missing a quantity or price';
+  const bad = d.lines.find((l) => l.printed > 0 && Math.abs(round2(l.qty * l.price) - l.printed) > 0.02);
+  if (bad) return `${bad.name}: quantity × price does not match the invoice (£${bad.printed.toFixed(2)})`;
   const sum = round2(d.lines.reduce((a, l) => a + l.qty * l.price, 0));
   const totals = [d.subtotal, d.printedTotal].filter((t) => t > 0);
   if (totals.length && !totals.some((t) => Math.abs(t - sum) <= 0.05)) return `Lines add up to £${sum.toFixed(2)} but the invoice says £${totals[totals.length - 1].toFixed(2)}`;
