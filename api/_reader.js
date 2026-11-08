@@ -58,13 +58,19 @@ export async function readInvoice(photos, testModel) {
   ]);
   const prompt = `These ${urls.length} photo(s) are the pages, in order, of ONE supplier invoice or delivery note for a restaurant.
 Extract every purchased line item. Reply with ONLY a JSON object, no other text:
-{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","pieces":2,"quantity":3.44,"unit":"kg","unitPrice":9.5,"lineTotal":32.68}],"subtotalExVat":0,"invoiceTotal":0,"readable":true,"problem":""}
+{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","category":"Chilled","packSize":"1 x 2.5kg","pieces":null,"quantity":1,"unit":"pack 2.5kg","unitPrice":13.45,"lineTotal":13.45,"vatRate":0,"promo":false,"regularPrice":null,"note":""}],"subtotalExVat":0,"invoiceTotal":0,"incomplete":false,"readable":true,"problem":""}
 Rules:
 - quantity × unitPrice must equal lineTotal, exactly as the invoice charges it. unitPrice is the price for ONE unit, before VAT/tax when both are shown. Never return the line total as unitPrice.
 - Weighed items (meat, fish, cheese): when the invoice shows a count AND a weight (e.g. Qty 2, Unit 3.44kg, Price 9.50, Value 32.68), set pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50 (per kg), lineTotal = 32.68.
 - pieces is the number of items, packs or joints delivered. Leave it null when it is the same as quantity.
 - lineTotal is the line value printed on the invoice.
 - unit is short and lowercase: kg, g, l, ml, each, box, case, tray, bunch, bag, dozen. If sold by pack, include the pack, e.g. "case 6x1l".
+- category: the section heading the line is printed under (e.g. "Chilled", "Frozen Food", "Catering Grocery"), in normal capitalisation. null when the invoice has no sections.
+- packSize: the pack size exactly as printed (e.g. "24 x 330ml", "4 x 2.5kg"), or null.
+- vatRate: the VAT % for the line when the invoice shows VAT codes and what they mean (e.g. code A = 0, code B = 20), else null.
+- promo: true when the line's price is a temporary reduction (short life, condition, price override, special offer, clearance). Put the usual price in regularPrice when it is shown (e.g. a WAS price) and a short reason in note.
+- Ignore RRP, POR, margin and barcode columns, and letters printed next to prices such as TC or R.
+- incomplete: true when the invoice clearly continues on a page that is not included (e.g. "/CONT", "continued", "Page 1 of 2" with no final totals).
 - Skip delivery charges, deposits, discounts, tax lines and free lines priced at 0.00 (promo magazines, samples). Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
 - Use plain product names without product codes. If a line clearly matches a known product below from the same supplier, reuse that exact name and unit so the price history stays linked.
 - Dates on invoices may be day/month/year. Return ISO YYYY-MM-DD.

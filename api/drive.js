@@ -61,7 +61,7 @@ function toDraft(r, sups) {
   return {
     supplierId: sid || 'new', newSupplier: sid ? '' : String(r.supplier || ''), number: String(r.invoiceNumber || ''),
     date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : '', printedTotal: num(r.invoiceTotal), subtotal: num(r.subtotalExVat),
-    lines: (r.lines || []).map((l) => ({ name: String(l.name || '').trim(), unit: String(l.unit || 'each').trim(), pieces: num(l.pieces) || null, qty: num(l.quantity), price: round2(num(l.unitPrice) || (num(l.lineTotal) && num(l.quantity) ? num(l.lineTotal) / num(l.quantity) : 0)) })).filter((l) => l.name),
+    lines: (r.lines || []).map((l) => ({ name: String(l.name || '').trim(), unit: String(l.unit || 'each').trim(), pieces: num(l.pieces) || null, category: l.category || null, packSize: l.packSize || null, vat: l.vatRate ?? null, promo: !!l.promo, regularPrice: num(l.regularPrice) || null, note: l.note || null, qty: num(l.quantity), price: round2(num(l.unitPrice) || (num(l.lineTotal) && num(l.quantity) ? num(l.lineTotal) / num(l.quantity) : 0)) })).filter((l) => l.name),
   };
 }
 
@@ -69,6 +69,7 @@ function problem(r, d) {
   const today = new Date().toISOString().slice(0, 10);
   if (r.readable === false) return 'Could not read: ' + (r.problem || 'unclear photo');
   if (!d.lines.length) return 'No product lines found';
+  if (r.incomplete) return 'This is only part of a longer invoice. Add the other page(s) and read it again.';
   if (d.supplierId === 'new' && !d.newSupplier) return 'Supplier name not found';
   if (!d.date) return 'Invoice date not found';
   if (d.date > today) return 'Date is in the future: ' + d.date;

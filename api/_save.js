@@ -8,7 +8,9 @@ export async function saveInvoice(b, { role, settings, origin }) {
   const date = String(b.date || '');
   if (!ISO.test(date)) return fail('Add the invoice date.');
   const lines = (Array.isArray(b.lines) ? b.lines : [])
-    .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', pieces: Number(l.pieces) > 0 ? Number(l.pieces) : null, qty: Number(l.qty) || 0, price: round2(Number(l.price) || 0) }))
+    .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', pieces: Number(l.pieces) > 0 ? Number(l.pieces) : null, qty: Number(l.qty) || 0, price: round2(Number(l.price) || 0),
+      category: l.category ? String(l.category).trim().slice(0, 60) : null, packSize: l.packSize ? String(l.packSize).trim().slice(0, 40) : null,
+      vat: [0, 5, 20].includes(Number(l.vat)) && l.vat !== null && l.vat !== '' ? Number(l.vat) : null, promo: !!l.promo, regularPrice: Number(l.regularPrice) > 0 ? round2(Number(l.regularPrice)) : null, note: l.note ? String(l.note).slice(0, 120) : null }))
     .filter((l) => l.name);
   if (!lines.length) return fail('Add at least one product line.');
   if (lines.some((l) => !(l.price > 0))) return fail('Every line needs a price above zero.');
@@ -38,7 +40,7 @@ export async function saveInvoice(b, { role, settings, origin }) {
 
   const existing = await sql`select id, name, unit, norm from products where supplier_id = ${supplierId}`;
   const lastPrices = existing.length
-    ? await sql`select distinct on (product_id) product_id, price, date from price_points where product_id = any(${existing.map((p) => p.id)}) and date <= ${date} order by product_id, date desc, created_at desc`
+    ? await sql`select distinct on (product_id) product_id, price, date from price_points where product_id = any(${existing.map((p) => p.id)}) and date <= ${date} and not coalesce(promo, false) order by product_id, date desc, created_at desc`
     : [];
   const priorOf = Object.fromEntries(lastPrices.map((r) => [r.product_id, { price: Number(r.price), date: r.date }]));
   const byNorm = Object.fromEntries(existing.map((p) => [p.norm, p]));
@@ -58,14 +60,14 @@ export async function saveInvoice(b, { role, settings, origin }) {
       queries.push(sql`update products set unit = ${l.unit} where id = ${p.id}`);
     }
     const prior = p.isNew ? null : priorOf[p.id];
-    if (prior && prior.price > 0 && !b.historic) {
+    if (prior && prior.price > 0 && !b.historic && !l.promo) {
       const diff = round2(l.price - prior.price), pct = (diff / prior.price) * 100;
       // A different unit or pack size (e.g. bunch -> box of 12) is not a price rise, so no alert.
       const sameUnit = p.isNew || norm(p.unit) === norm(l.unit);
       if (sameUnit && diff > 0.004 && pct >= threshold) alerts.push({ id: newId('a'), productId: p.id, productName: p.name, unit: l.unit, from: prior.price, to: l.price, diff, pct: round2(pct), qty: l.qty });
     }
-    invLines.push({ productId: p.id, name: p.name, unit: l.unit, pieces: l.pieces, qty: l.qty, price: l.price, total: round2(l.qty * l.price) });
-    pointQueries.push(sql`insert into price_points (product_id, invoice_id, date, price, qty) values (${p.id}, ${invoiceId}, ${date}, ${l.price}, ${l.qty})`);
+    invLines.push({ productId: p.id, name: p.name, unit: l.unit, pieces: l.pieces, qty: l.qty, price: l.price, total: round2(l.qty * l.price), category: l.category, packSize: l.packSize, vat: l.vat, promo: l.promo, regularPrice: l.regularPrice, note: l.note });
+    pointQueries.push(sql`insert into price_points (product_id, invoice_id, date, price, qty, promo) values (${p.id}, ${invoiceId}, ${date}, ${l.price}, ${l.qty}, ${l.promo})`);
   }
   const total = round2(invLines.reduce((a, l) => a + l.qty * l.price, 0));
   queries.push(sql`insert into invoices (id, supplier_id, number, date, lines, total, printed_total, photos, source, created_by, source_file) values (${invoiceId}, ${supplierId}, ${number}, ${date}, ${JSON.stringify(invLines)}::jsonb, ${total}, ${Number(b.printedTotal) || null}, ${JSON.stringify(photos)}::jsonb, ${['ai','pricelist'].includes(b.source) ? b.source : 'manual'}, ${role}, ${b.sourceFile ? String(b.sourceFile).slice(0, 300) : null})`);
