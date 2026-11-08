@@ -60,7 +60,9 @@ export async function saveInvoice(b, { role, settings, origin }) {
     const prior = p.isNew ? null : priorOf[p.id];
     if (prior && prior.price > 0 && !b.historic) {
       const diff = round2(l.price - prior.price), pct = (diff / prior.price) * 100;
-      if (diff > 0.004 && pct >= threshold) alerts.push({ id: newId('a'), productId: p.id, productName: p.name, unit: l.unit, from: prior.price, to: l.price, diff, pct: round2(pct), qty: l.qty });
+      // A different unit or pack size (e.g. bunch -> box of 12) is not a price rise, so no alert.
+      const sameUnit = p.isNew || norm(p.unit) === norm(l.unit);
+      if (sameUnit && diff > 0.004 && pct >= threshold) alerts.push({ id: newId('a'), productId: p.id, productName: p.name, unit: l.unit, from: prior.price, to: l.price, diff, pct: round2(pct), qty: l.qty });
     }
     invLines.push({ productId: p.id, name: p.name, unit: l.unit, qty: l.qty, price: l.price });
     pointQueries.push(sql`insert into price_points (product_id, invoice_id, date, price, qty) values (${p.id}, ${invoiceId}, ${date}, ${l.price}, ${l.qty})`);
