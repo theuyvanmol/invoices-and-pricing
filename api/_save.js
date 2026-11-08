@@ -2,13 +2,34 @@
 import { json, fail, sql, newId, norm, round2 } from './_lib.js';
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const round4 = (n) => Math.round(Number(n) * 10000) / 10000;
+const sing = (w) => String(w || '').toLowerCase().replace(/(es|s)$/, '');
+
+// When a product we usually buy per bunch/each/head arrives as a box of N of them,
+// express it in the usual unit so prices stay comparable. Returns true when converted.
+export function toBaseUnit(oldUnit, l) {
+  const base = sing(norm(oldUnit));
+  if (!base || /\d/.test(base) || base.length < 2) return false;
+  const text = [l.unit, l.packSize, l.note].filter(Boolean).join(' ').toLowerCase();
+  let count = 0;
+  for (const m of text.matchAll(/(\d+)\s*(?:x\s*)?([a-z]+)/g)) if (sing(m[2]) === base) { count = Number(m[1]); break; }
+  if (!(count > 1)) return false;
+  const packs = l.qty || 1;
+  l.pieces = l.pieces || packs;
+  l.qty = Math.round(packs * count * 1000) / 1000;
+  l.price = round4(l.price / count);
+  l.note = [l.note, `${packs} × ${l.unit} = ${l.qty} ${oldUnit}`].filter(Boolean).join(' · ');
+  l.unit = oldUnit;
+  return true;
+}
+
 
 // Saves one checked invoice: suppliers, products, price history and alerts. Returns a Response.
 export async function saveInvoice(b, { role, settings, origin }) {
   const date = String(b.date || '');
   if (!ISO.test(date)) return fail('Add the invoice date.');
   const lines = (Array.isArray(b.lines) ? b.lines : [])
-    .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', pieces: Number(l.pieces) > 0 ? Number(l.pieces) : null, qty: Number(l.qty) || 0, price: round2(Number(l.price) || 0),
+    .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', pieces: Number(l.pieces) > 0 ? Number(l.pieces) : null, qty: Number(l.qty) || 0, price: round4(Number(l.price) || 0),
       category: l.category ? String(l.category).trim().slice(0, 60) : null, packSize: l.packSize ? String(l.packSize).trim().slice(0, 40) : null,
       vat: [0, 5, 20].includes(Number(l.vat)) && l.vat !== null && l.vat !== '' ? Number(l.vat) : null, promo: !!l.promo, regularPrice: Number(l.regularPrice) > 0 ? round2(Number(l.regularPrice)) : null, note: l.note ? String(l.note).slice(0, 120) : null }))
     .filter((l) => l.name);
@@ -56,6 +77,8 @@ export async function saveInvoice(b, { role, settings, origin }) {
       p = { id: newId('p'), name: l.name, unit: l.unit, norm: key, isNew: true };
       byNorm[key] = p; news++;
       queries.push(sql`insert into products (id, supplier_id, name, unit, norm) values (${p.id}, ${supplierId}, ${l.name}, ${l.unit}, ${key})`);
+    } else if (!p.isNew && p.unit !== l.unit && toBaseUnit(p.unit, l)) {
+      // converted, e.g. 1 box of 12 bunches at £6.50 -> 12 bunch at £0.5417
     } else if (!p.isNew && p.unit !== l.unit) {
       queries.push(sql`update products set unit = ${l.unit} where id = ${p.id}`);
     }

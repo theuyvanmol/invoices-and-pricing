@@ -12,12 +12,18 @@ export const POST = route(async (request, ctx) => {
 export const DELETE = route(async (request) => {
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return fail('Missing invoice.');
-  const r = await sql`select photos from invoices where id = ${id}`;
+  const r = await sql`select photos, lines from invoices where id = ${id}`;
   if (!r[0]) return fail('Invoice not found.', 404);
   await sql.transaction([
     sql`delete from invoices where id = ${id}`,
     sql`delete from products p where not exists (select 1 from price_points pp where pp.product_id = p.id)`,
   ]);
+  // Put each affected product's unit back to the unit on its latest remaining invoice.
+  for (const pid of [...new Set((r[0].lines || []).map((l) => l.productId).filter(Boolean))]) {
+    const last = await sql`select lines from invoices where lines @> ${JSON.stringify([{ productId: pid }])}::jsonb order by date desc, created_at desc limit 1`;
+    const unit = last[0] && (last[0].lines || []).find((l) => l.productId === pid)?.unit;
+    if (unit) await sql`update products set unit = ${unit} where id = ${pid}`;
+  }
   const photos = r[0].photos || [];
   if (photos.length && process.env.BLOB_READ_WRITE_TOKEN) await del(photos).catch((e) => console.error('Photo delete failed', e));
   return json({ ok: true });
