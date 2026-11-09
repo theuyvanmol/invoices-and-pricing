@@ -230,6 +230,7 @@ table.list .num{text-align:right;white-space:nowrap}
 .invoice-photo{width:100%;border-radius:12px;border:1px solid var(--line);display:block;margin-bottom:10px}
 .empty{padding:36px 18px;text-align:center;color:var(--muted);display:grid;gap:10px;justify-items:center}
 .empty b{color:var(--ink);font-family:var(--f-display);font-size:17px}
+.newver{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:60;max-width:calc(100% - 32px);padding:12px 16px;border-radius:12px;border:0;background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.25);cursor:pointer}
 .toast{position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:var(--shadow);max-width:calc(100vw - 32px)}
 .toast[hidden]{display:none}
 .notice{font-size:13px;color:var(--ink-2);background:var(--surface-2);border-radius:10px;padding:10px 12px}
@@ -436,11 +437,23 @@ async function api(path,opts={}){
   if(opts.body instanceof Blob){o.body=opts.body}else if(opts.body!==undefined){o.body=JSON.stringify(opts.body);o.headers['content-type']='application/json'}
   let r;
   try{r=await fetch(path,o)}catch(e){throw Object.assign(new Error('No connection. Check the internet and try again.'),{offline:true})}
+  checkVersion(r.headers.get('x-app-version'));
   let data={};try{data=await r.json()}catch(e){}
   if(r.status===401&&data.code==='AUTH'){S.role=null;if(!S.loginMode||S.loginMode==='open')S.loginMode='password';showGate();}
   if(!r.ok)throw Object.assign(new Error(data.error||'Something went wrong. Try again.'),{status:r.status,code:data.code});
   return data;
 }
+/* A new version was deployed: reload open pages so nobody keeps using an old copy. */
+let APPV=null,newVer=false;
+function checkVersion(v){if(!v)return;if(!APPV){APPV=v;return}if(v!==APPV&&!newVer){newVer=true;updateApp()}}
+function busyNow(){return scan.step==='review'||IMP.running||DRV.busy||!!document.querySelector('#main input:focus,#main textarea:focus,#main select:focus')}
+function updateApp(){
+  if(!busyNow()){location.reload();return}
+  if($('#newver'))return;
+  const b=document.createElement('button');b.id='newver';b.className='newver';b.textContent='New version ready. Tap to update (save your work first).';b.onclick=()=>location.reload();document.body.appendChild(b);
+}
+setInterval(()=>{if(newVer&&!busyNow())location.reload()},15000);
+setInterval(()=>{if(document.visibilityState==='visible'&&!$('#gate').hidden)api('/api/session').catch(()=>{})},60000);
 let loading=false;
 async function load(){
   if(loading||!S.role)return;loading=true;

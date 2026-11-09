@@ -5,8 +5,9 @@ import crypto from 'node:crypto';
 const DB_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL_UNPOOLED || '';
 export const sql = DB_URL ? neon(DB_URL) : null;
 
+export const VERSION = (process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || 'dev').slice(0, 12);
 export const json = (data, status = 200, headers = {}) =>
-  new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers } });
+  new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-app-version': VERSION, ...headers } });
 export const fail = (message, status = 400, extra = {}) => json({ error: message, ...extra }, status);
 
 export const newId = (p) => p + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
