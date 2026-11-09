@@ -31,13 +31,18 @@ export function toBaseUnit(oldUnit, l) {
 export async function saveInvoice(b, { role, settings, origin }) {
   const date = String(b.date || '');
   if (!ISO.test(date)) return fail('Add the invoice date.');
-  const lines = (Array.isArray(b.lines) ? b.lines : [])
+  let lines = (Array.isArray(b.lines) ? b.lines : [])
     .map((l) => ({ name: String(l.name || '').trim().slice(0, 120), unit: String(l.unit || 'each').trim().slice(0, 30) || 'each', pieces: Number(l.pieces) > 0 ? Number(l.pieces) : null, qty: Number(l.qty) || 0, price: round4(Number(l.price) || 0),
       category: l.category ? String(l.category).trim().slice(0, 60) : null, packSize: l.packSize ? String(l.packSize).trim().slice(0, 40) : null,
-      vat: [0, 5, 20].includes(Number(l.vat)) && l.vat !== null && l.vat !== '' ? Number(l.vat) : null, promo: !!l.promo, regularPrice: Number(l.regularPrice) > 0 ? round2(Number(l.regularPrice)) : null, note: l.note ? String(l.note).slice(0, 120) : null }))
+      vat: [0, 5, 20].includes(Number(l.vat)) && l.vat !== null && l.vat !== '' ? Number(l.vat) : null, promo: !!l.promo, regularPrice: Number(l.regularPrice) > 0 ? round2(Number(l.regularPrice)) : null, note: l.note ? String(l.note).slice(0, 120) : null, other: !!l.other }))
     .filter((l) => l.name);
   if (!lines.length) return fail('Add at least one product line.');
-  if (lines.some((l) => !(l.price > 0))) return fail('Every line needs a price above zero.');
+  // Lines that are not products (delivery, deposits, credits such as waste oil collected) count in the
+  // total but have no price history. Credits are negative. Free lines (£0) are left out.
+  for (const l of lines) l.other = !!l.other || l.price < 0;
+  lines = lines.filter((l) => l.price !== 0);
+  if (!lines.length) return fail('Add at least one product line.');
+  if (lines.some((l) => !l.other && !(l.price > 0))) return fail('Every product line needs a price above zero.');
   const photos = (Array.isArray(b.photos) ? b.photos : []).filter((u) => /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(String(u))).slice(0, 5);
   const number = String(b.number || '').trim().slice(0, 60);
 
@@ -74,6 +79,7 @@ export async function saveInvoice(b, { role, settings, origin }) {
   const invLines = [], alerts = [], pointQueries = [];
   let news = 0;
   for (const l of lines) {
+    if (l.other) { invLines.push({ productId: null, name: l.name, unit: l.unit, pieces: l.pieces, qty: l.qty, price: l.price, total: round2(l.qty * l.price), category: l.category, vat: l.vat, note: l.note, other: true }); continue; }
     const key = norm(l.name);
     let p = byNorm[key];
     if (!p) {
