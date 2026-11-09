@@ -429,7 +429,7 @@ async function api(path,opts={}){
   let r;
   try{r=await fetch(path,o)}catch(e){throw Object.assign(new Error('No connection. Check the internet and try again.'),{offline:true})}
   let data={};try{data=await r.json()}catch(e){}
-  if(r.status===401&&data.code==='AUTH'){S.role=null;showGate();}
+  if(r.status===401&&data.code==='AUTH'){S.role=null;if(!S.loginMode||S.loginMode==='open')S.loginMode='password';showGate();}
   if(!r.ok)throw Object.assign(new Error(data.error||'Something went wrong. Try again.'),{status:r.status,code:data.code});
   return data;
 }
@@ -462,6 +462,9 @@ function showGate(msg=''){
   <div class="err" id="gateErr">${esc(msg)}</div><button class="btn primary" type="submit">Create app</button></form></div>`;
   $('#setupForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/session',{method:'POST',body:{action:'setup',restaurant:$('#suRest').value,ownerPin:$('#suOwner').value,managerPin:$('#suMgr').value,alertEmail:$('#suEmail').value}});S.needsSetup=false;S.role='owner';hideGate();toast('Your app is ready. Scan the first invoice.');load()}catch(err){$('#gateErr').textContent=err.message}};
   return}
+  if(S.loginMode==='password'){g.innerHTML=`<div class="gate-card">${gateBrand()}<h1>Sign in</h1><form id="loginForm" autocomplete="on"><label class="fl"><span>Name or email</span><input class="field" id="lgUser" name="username" autocomplete="username" autocapitalize="none" required></label><label class="fl"><span>Password</span><input class="field" id="lgPass" name="password" type="password" autocomplete="current-password" required></label><div class="err" id="gateErr">${esc(msg)}</div><button class="btn primary bigbtn" type="submit">Sign in</button></form></div>`;
+    $('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.submitter;if(b)b.disabled=true;try{const r=await api('/api/session',{method:'POST',body:{action:'login',username:$('#lgUser').value,password:$('#lgPass').value}});S.role=r.role;hideGate();boot()}catch(err){$('#gateErr').textContent=err.message;if(b)b.disabled=false}};
+    setTimeout(()=>$('#lgUser')?.focus(),50);return}
   pin='';
   g.innerHTML=`<div class="gate-card">${gateBrand()}<h1>Enter your PIN</h1><p>Owner or manager PIN</p><div class="pinrow" id="pinDots"></div><div class="err" id="gateErr">${esc(msg)}</div>
   <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-key="${n}">${n}</button>`).join('')}<button class="ghostkey" data-key="clear">Clear</button><button data-key="0">0</button><button class="ghostkey" data-key="ok">Enter</button></div></div>`;
@@ -478,7 +481,7 @@ $('#gate').addEventListener('click',e=>{
   if(k==='clear'){pin=''}else if(k==='ok'){tryLogin();return}else if(pin.length<8){pin+=k}
   $('#gateErr').textContent='';dots();
 });
-document.addEventListener('keydown',e=>{if($('#gate').hidden||S.needsSetup||S.noDb)return;if(/^\d$/.test(e.key)&&pin.length<8){pin+=e.key;dots()}else if(e.key==='Backspace'){pin=pin.slice(0,-1);dots()}else if(e.key==='Enter')tryLogin()});
+document.addEventListener('keydown',e=>{if($('#gate').hidden||S.needsSetup||S.noDb||S.loginMode==='password')return;if(/^\d$/.test(e.key)&&pin.length<8){pin+=e.key;dots()}else if(e.key==='Backspace'){pin=pin.slice(0,-1);dots()}else if(e.key==='Enter')tryLogin()});
 function hideGate(){$('#gate').hidden=true;$('#gate').innerHTML='';render()}
 async function boot(){
   render();
@@ -486,7 +489,7 @@ async function boot(){
     const s=await api('/api/session');
     S.features=s.features||{};
     if(s.error==='NO_DB'){S.noDb=true;showGate();return}
-    S.needsSetup=!!s.needsSetup;S.settings={...S.settings,...(s.settings||{})};S.role=s.role;
+    S.needsSetup=!!s.needsSetup;S.settings={...S.settings,...(s.settings||{})};S.role=s.role;S.loginMode=s.loginMode||'open';S.accounts=s.accounts||[];
     if(!S.role)showGate();else{load()}
   }catch(e){S.err=e.message;render()}
 }
@@ -500,7 +503,7 @@ function renderNav(){
   const tabs=[['home','Home'],['pricelist','Prices'],['scan','Scan'],['alerts','Alerts'],['invoices','Invoices']];
   $('#tabbar').innerHTML=tabs.map(([k,l])=>k==='scan'?`<button class="tab scan ${v===k?'on':''}" data-go="scan" aria-label="Scan invoice"><span class="fab">${I.scan}</span>${l}</button>`:`<button class="tab ${v===k?'on':''}" data-go="${k}">${I[k]}${l}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
   const role=isOwner()?'Owner':'Manager';
-  $('#sideFoot').innerHTML=S.role&&!S.settings.pinsEnabled?`${esc(S.settings.restaurant)}<br>${S.prod.length} products · ${S.inv.length} invoices`:S.role?`Signed in as <b>${role}</b> · <button class="btn ghost sm" data-act="signout" style="min-height:28px;padding:0 6px">Sign out</button><br>${S.prod.length} products · ${S.inv.length} invoices`:'';
+  $('#sideFoot').innerHTML=S.role&&S.loginMode==='open'?`${esc(S.settings.restaurant)}<br>${S.prod.length} products · ${S.inv.length} invoices`:S.role?`Signed in as <b>${role}</b> · <button class="btn ghost sm" data-act="signout" style="min-height:28px;padding:0 6px">Sign out</button><br>${S.prod.length} products · ${S.inv.length} invoices`:'';
   $('#sideRest').textContent=S.settings.restaurant||'Geisha Restaurant';
 }
 
@@ -855,18 +858,22 @@ function vSettings(){
     <div class="setrow"><div><b>Email price alerts to</b><p class="small muted">${f.email?'Sent as soon as an invoice with a price increase is saved.':'Email sending is not switched on yet (see setup notes).'} Separate several addresses with commas.</p></div><input class="field" id="setEmail" type="email" multiple value="${esc(S.settings.alertEmail||'')}" placeholder="owner@restaurant.com" ${ro?'disabled':''}></div>
     ${ro?'':'<div class="savebar"><button class="btn primary" data-act="saveSettings">Save settings</button></div>'}
   </div></section>
-  ${ro?'':`<section class="panel"><div class="panel-h"><h2>Sign-in with PINs</h2>${S.settings.pinsEnabled?'<span class="pill down">On</span>':'<span class="pill warn">Off</span>'}</div><div class="panel-b"><p class="small muted" style="margin-bottom:10px">${S.settings.pinsEnabled?'Changing a PIN signs everyone else out. Leave a field empty to keep that PIN.':'Right now anyone with the link can use the app. Choose an owner PIN and a manager PIN to require sign-in.'}</p><div class="form2" style="grid-template-columns:1fr 1fr"><label class="fl"><span>New owner PIN</span><input class="field mono" id="newOwnerPin" inputmode="numeric" type="password" autocomplete="new-password"></label><label class="fl"><span>New manager PIN</span><input class="field mono" id="newMgrPin" inputmode="numeric" autocomplete="off"></label></div><div class="savebar"><button class="btn" data-act="savePins">${S.settings.pinsEnabled?'Change PINs':'Turn on PIN sign-in'}</button></div></div></section>`}
+  ${ro?'':`<section class="panel"><div class="panel-h"><h2>Logins</h2>${(S.accounts||[]).length?'<span class="pill down">Sign-in on</span>':'<span class="pill warn">Open to anyone with the link</span>'}</div><div class="panel-b">
+    <div class="rows" style="margin-bottom:12px">${(S.accounts||[]).map(u=>`<div class="row" style="padding-inline:0"><span class="t">${esc(u.username)}${u.email?` <span class="muted small">${esc(u.email)}</span>`:''}</span><span class="r"><span class="pill ${u.role==='owner'?'new':'flat'}">${u.role==='owner'?'Owner':'Manager'}</span></span><span class="s">${u.role==='owner'?'Sees everything, reviews alerts, changes settings':'Adds invoices and looks up prices'}</span><span class="r"><button class="btn sm ghost" data-acctedit="${esc(u.id)}">Change</button></span></div>`).join('')||'<p class="small muted">No logins yet. Anyone with the link can use the app.</p>'}</div>
+    <div class="form2" style="grid-template-columns:repeat(2,minmax(0,1fr))"><label class="fl"><span>Name</span><input class="field" id="acName" value="${esc(UI.acct?.username||'')}" autocomplete="off"></label><label class="fl"><span>Email (optional)</span><input class="field" id="acEmail" type="email" value="${esc(UI.acct?.email||'')}" autocomplete="off"></label><label class="fl"><span>${UI.acct?'New password (leave empty to keep)':'Password (8+ characters)'}</span><input class="field" id="acPass" type="password" autocomplete="new-password"></label><label class="fl"><span>Access</span><select class="field" id="acRole"><option value="manager" ${UI.acct?.role==='manager'?'selected':''}>Manager</option><option value="owner" ${!UI.acct||UI.acct.role==='owner'?'selected':''}>Owner</option></select></label></div>
+    <div class="savebar">${UI.acct?`<button class="btn danger" data-act="acctRemove">Remove login</button><button class="btn" data-act="acctCancel">Cancel</button>`:''}<button class="btn primary" data-act="acctSave">${UI.acct?'Save changes':'Add login'}</button></div>
+  </div></section>`}
   </div>
   <div class="stack"><section class="panel"><div class="panel-h"><h2>How your team uses it</h2></div><div class="panel-b"><ol class="howto">
-    <li><span>Send your managers this website address and the <b>manager PIN</b>.</span></li>
+    <li><span>Send your managers this website address and their <b>login</b> (add one for them under Logins).</span></li>
     <li><span>On their phone they open it, tap Share → <b>Add to Home Screen</b>. It then opens like an app.</span></li>
     <li><span>Each delivery: tap the big <b>Scan</b> button, photograph every page, check the lines, tap Save.</span></li>
-    <li><span>You sign in with the <b>owner PIN</b> to see every price, invoice photo and alert, and to mark alerts reviewed.</span></li>
+    <li><span>Owners see every price, invoice photo and alert, and mark alerts reviewed.</span></li>
   </ol></div></section>
   <section class="panel"><div class="panel-h"><h2>System status</h2></div><div class="panel-b rows" style="padding:0 0 6px">
     ${[['Database',true],['Invoice photos',f.photos],['Automatic reading',f.ai],['Email alerts',f.email]].map(([l,ok])=>`<div class="row" style="padding-inline:18px"><span class="t">${l}</span><span class="r">${ok?'<span class="pill down">On</span>':'<span class="pill warn">Not set up</span>'}</span></div>`).join('')}
   </div></section>
-  ${S.settings.pinsEnabled?'<button class="btn" data-act="signout">Sign out</button>':''}</div></div>`;
+  ${S.loginMode&&S.loginMode!=='open'?'<button class="btn" data-act="signout">Sign out</button>':''}</div></div>`;
   return h;
 }
 
@@ -912,13 +919,25 @@ function matchSupplier(name){const n=norm(name);if(!n)return null;return S.sup.f
 function matchProduct(supplierId,name){const n=norm(name);if(!n||!supplierId||supplierId==='new')return null;return S.prod.find(p=>p.supplierId===supplierId&&norm(p.name)===n)||null}
 function lastBefore(p,date){const h=sortedHist(p).filter(x=>(x.d||'')<=(date||'9999')&&!x.promo);return h.length?h[h.length-1]:null}
 
+// Same rule as the server: a box of N of the usual unit is compared per that unit.
+function basePreview(oldUnit,l){
+  const COUNT=/^(each|single|sgl|piece|pc|pcs|item|unit|ea)$/;const sing=w=>{const x=String(w||'').toLowerCase().trim();return COUNT.test(x)?'each':x.replace(/(es|s)$/,'')};
+  const base=sing(norm(oldUnit));if(!base||/\d/.test(base))return null;
+  const text=[l.unit,l.packSize,l.note].filter(Boolean).join(' ').toLowerCase();let count=0;
+  for(const m of text.matchAll(/(\d+(?:\.\d+)?)\s*(?:x\s*)?([a-z]+)/g))if(sing(m[2])===base){count=Number(m[1]);break}
+  if(!count&&base==='each'){const m=text.match(/\((\d+)\)|\bof\s+(\d+)\b/);if(m)count=Number(m[1]||m[2])}
+  if(!(count>1))return null;const packs=num(l.qty)||1;return {qty:packs*count,price:num(l.price)/count,unit:oldUnit,count};
+}
 function cmpHTML(l){
   const d=scan.draft;const p=matchProduct(d.supplierId,l.name);
   if(!l.name.trim())return '<span class="muted">Enter a product name</span>';
   if(!p)return `<span class="pill new">New product</span>`;
   const pr=lastBefore(p,d.date);if(!pr)return '<span class="pill new">First price</span>';
-  const unitWarn=norm(p.unit)!==norm(l.unit)?` <span class="pill warn">Unit was ${esc(p.unit)}</span>`:'';
-  const diff=round2(num(l.price)-pr.p),pct=pr.p?diff/pr.p*100:0;
+  const prUnit=(S.inv.find(v=>v.id===pr.inv)?.lines||[]).find(x=>x.productId===p.id)?.unit||p.unit;
+  let price=num(l.price),conv='';
+  if(norm(prUnit)!==norm(l.unit)){const b=basePreview(prUnit,l);if(b){price=b.price;conv=`<span class="pill flat">= ${b.qty} ${esc(prUnit)} at ${moneyU(b.price)} each</span>`}else return `<span class="pill flat">Different unit</span><span class="muted">Before: ${moneyU(pr.p)} per ${esc(prUnit)}. Not compared, no alert.</span>`}
+  const unitWarn=conv;
+  const diff=Math.round((price-pr.p)*10000)/10000,pct=pr.p?diff/pr.p*100:0;
   if(l.promo)return `<span class="pill new">Temporary price</span><span class="muted">Normal price ${money(pr.p)}. No alert, and it will not count as the new price.</span>${unitWarn}`;
   if(diff>0.004)return `<span class="pill up">▲ +${money(diff)} (${pct.toFixed(1)}%)</span><span class="muted">Last paid ${money(pr.p)} on ${fmtShort(pr.d)}</span>${unitWarn}`;
   if(diff<-0.004)return `<span class="pill down">▼ ${money(diff)} (${pct.toFixed(1)}%)</span><span class="muted">Last paid ${money(pr.p)} on ${fmtShort(pr.d)}</span>${unitWarn}`;
@@ -957,10 +976,10 @@ function lineDesc(l){if(!num(l.qty)||!num(l.price))return '';const u=(l.unit||''
 async function shrink(file){
   try{
     const url=URL.createObjectURL(file);const img=new Image();img.src=url;await img.decode();
-    const m=1800,sc=Math.min(1,m/Math.max(img.naturalWidth,img.naturalHeight));
+    const m=2400,sc=Math.min(1,m/Math.max(img.naturalWidth,img.naturalHeight));
     const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);
     c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
-    const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.86));return b||file;
+    const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.88));return b||file;
   }catch(e){return file}
 }
 async function addPhotos(files){
@@ -994,6 +1013,8 @@ async function readInvoice(){
     scan.draft={supplierId:sup?sup.id:(scan.kind==='pricelist'&&scan.supplierId?scan.supplierId:'new'),newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:todayISO(),printedTotal:num(r.invoiceTotal),
       lines:r.lines.map(fromRead).map(l=>({...l,qty:l.qty||'1'})).filter(l=>l.name),incomplete:!!r.incomplete};
     if(r.incomplete)scan.error='This looks like only part of a longer invoice. Use “Add page and read again” to add the other page(s).';
+    else if(r.reader?.issue)scan.error='Some lines may be wrong: '+r.reader.issue.replace('quantity × unitPrice does not equal lineTotal for','quantity × price does not match the invoice for')+'. Check the highlighted lines against the photo.';
+    else if(r.reader?.backup)scan.error='Read with the backup reader because today’s free limit on the main reader was used up. Check each line carefully.';
     scan.step='review';lastView=null;render();
   }catch(e){
     if(myRun.cancelled)return;
@@ -1138,8 +1159,9 @@ function refreshCmp(){
 
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-fixunit],[data-toggleline],[data-drvcheck],[data-drvretry],[data-drvignore],[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
+  const t=e.target.closest('[data-acctedit],[data-fixunit],[data-toggleline],[data-drvcheck],[data-drvretry],[data-drvignore],[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
   if(!t)return;
+  if(t.dataset.acctedit){UI.acct=(S.accounts||[]).find(u=>u.id===t.dataset.acctedit)||null;render();return}
   if(t.dataset.fixunit){const [inv,pid,q]=t.dataset.fixunit.split('|');const ln=S.inv.find(v=>v.id===inv)?.lines?.find(l=>l.productId===pid);UI.fix={inv,pid,qty:ln?.qty??q,unit:ln?.unit||''};showProduct(pid);setTimeout(()=>$('#fixCount')?.focus(),50);return}
   if(t.dataset.drvcheck){drvCheck(t.dataset.drvcheck);return}
   if(t.dataset.drvretry){try{await api('/api/drive',{method:'POST',body:{action:'retry',fileId:t.dataset.drvretry}});await drvLoad();drvSync(false)}catch(e){toast(e.message)}return}
@@ -1175,6 +1197,9 @@ document.addEventListener('click',async e=>{
   else if(a==='saveSettings'){try{const r=await api('/api/settings',{method:'PUT',body:{threshold:num($('#setThr').value),restaurant:$('#setRest').value.trim(),alertEmail:$('#setEmail').value.trim()}});S.settings={...S.settings,...r.settings};toast('Settings saved.');render()}catch(e){toast(e.message)}}
   else if(a==='savePins'){const o=$('#newOwnerPin').value.trim(),m=$('#newMgrPin').value.trim();if(!o&&!m){toast('Type a new PIN first.');return}try{await api('/api/session',{method:'POST',body:{action:'pins',ownerPin:o||undefined,managerPin:m||undefined}});S.settings.pinsEnabled=true;toast('PIN sign-in is on. Tell your managers the manager PIN.');render();$('#newOwnerPin').value='';$('#newMgrPin').value=''}catch(e){toast(e.message)}}
   else if(a==='signout')signOut();
+  else if(a==='acctSave'){try{await api('/api/session',{method:'POST',body:{action:'account',id:UI.acct?.id,username:$('#acName').value,email:$('#acEmail').value,password:$('#acPass').value,role:$('#acRole').value}});UI.acct=null;const s2=await api('/api/session');S.accounts=s2.accounts||[];S.loginMode=s2.loginMode;toast('Login saved.');render()}catch(e){toast(e.message)}}
+  else if(a==='acctCancel'){UI.acct=null;render()}
+  else if(a==='acctRemove'){if(!UI.acct)return;try{await api('/api/session',{method:'POST',body:{action:'account',remove:UI.acct.id}});UI.acct=null;const s2=await api('/api/session');S.accounts=s2.accounts||[];S.loginMode=s2.loginMode;toast('Login removed.');render()}catch(e){toast(e.message)}}
   else if(a==='toggleAll'){const all=scan.draft.lines.every(lineOpen);scan.draft.lines.forEach(l=>l._open=!all);lastView=null;render()}
   else if(a==='fixCancel'){const pid=UI.fix?.pid;UI.fix=null;if(pid)showProduct(pid)}
   else if(a==='fixSave'){const f=UI.fix;try{await api('/api/invoices',{method:'PATCH',body:{invoiceId:f.inv,productId:f.pid,count:num($('#fixCount').value),unit:$('#fixUnit').value.trim()}});UI.fix=null;await load();showProduct(f.pid);toast('Pack size fixed. Price is now per item.')}catch(e){toast(e.message)}}

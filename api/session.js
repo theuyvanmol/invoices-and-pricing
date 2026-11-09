@@ -15,7 +15,9 @@ export async function GET(request) {
   try {
     const s = await getSettings();
     const role = await getRole(request, s);
-    return json({ needsSetup: false, role, settings: role ? publicSettings(s) : { restaurant: s.restaurant || '', pinsEnabled: true }, features: features() });
+    const loginMode = (s.users || []).length ? 'password' : s.pinsEnabled ? 'pin' : 'open';
+    const accounts = role === 'owner' ? (s.users || []).map(({ id, username, email, role }) => ({ id, username, email, role })) : undefined;
+    return json({ needsSetup: false, role, loginMode, accounts, settings: role ? publicSettings(s) : { restaurant: s.restaurant || '', pinsEnabled: true }, features: features() });
   } catch (e) {
     console.error(e);
     return fail('Could not reach the database.', 503);
@@ -52,16 +54,48 @@ export async function POST(request) {
     if (body.action === 'login') {
       const now = Date.now();
       if ((s.fails || 0) >= 8 && now - (s.failAt || 0) < 15 * 60 * 1000) return fail('Too many wrong PINs. Wait 15 minutes and try again.', 429);
-      const pin = String(body.pin || '');
-      const role = checkPin(pin, s.ownerHash) ? 'owner' : checkPin(pin, s.managerHash) ? 'manager' : null;
+      let role = null;
+      if (body.username !== undefined) {
+        const who = String(body.username || '').trim().toLowerCase();
+        const u = (s.users || []).find((x) => x.username.toLowerCase() === who || (x.email || '').toLowerCase() === who);
+        if (u && checkPin(String(body.password || ''), u.hash)) role = u.role;
+      } else if (!(s.users || []).length) {
+        const pin = String(body.pin || '');
+        role = checkPin(pin, s.ownerHash) ? 'owner' : checkPin(pin, s.managerHash) ? 'manager' : null;
+      }
       if (!role) {
         const fails = now - (s.failAt || 0) > 15 * 60 * 1000 ? 1 : (s.fails || 0) + 1;
         await saveSettings({ ...s, fails, failAt: now });
         await new Promise((r) => setTimeout(r, 500));
-        return fail('That PIN is not right.', 401);
+        return fail(body.username !== undefined ? 'That name or password is not right.' : 'That PIN is not right.', 401);
       }
       if (s.fails) await saveSettings({ ...s, fails: 0, failAt: 0 });
       return json({ ok: true, role }, 200, { 'set-cookie': makeSession(role, s.secret) });
+    }
+
+    if (body.action === 'account') {
+      const role = await getRole(request, s);
+      if (role !== 'owner') return fail('Only the owner can change logins.', 403);
+      const users = [...(s.users || [])];
+      if (body.remove) {
+        const left = users.filter((u) => u.id !== body.remove);
+        if (left.length && !left.some((u) => u.role === 'owner')) return fail('Keep at least one owner login.');
+        await saveSettings({ ...s, users: left });
+        return json({ ok: true });
+      }
+      const username = String(body.username || '').trim().slice(0, 40), email = String(body.email || '').trim().toLowerCase().slice(0, 120);
+      const password = String(body.password || '');
+      if (!username) return fail('Enter a name.');
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('Check the email address.');
+      const existing = users.find((u) => u.id === body.id || u.username.toLowerCase() === username.toLowerCase());
+      if (!existing && password.length < 8) return fail('Passwords need at least 8 characters.');
+      if (existing && password && password.length < 8) return fail('Passwords need at least 8 characters.');
+      const roleNew = body.role === 'manager' ? 'manager' : 'owner';
+      if (existing) Object.assign(existing, { username, email, role: roleNew }, password ? { hash: hashPin(password) } : {});
+      else users.push({ id: 'u_' + crypto.randomBytes(6).toString('hex'), username, email, role: roleNew, hash: hashPin(password) });
+      if (!users.some((u) => u.role === 'owner')) return fail('Keep at least one owner login.');
+      await saveSettings({ ...s, users });
+      return json({ ok: true }, 200, { 'set-cookie': makeSession('owner', s.secret) });
     }
 
     if (body.action === 'logout') return json({ ok: true }, 200, { 'set-cookie': clearSession() });

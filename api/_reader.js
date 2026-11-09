@@ -73,6 +73,7 @@ Rules:
 - promo: true when the line's price is a temporary reduction (short life, condition, price override, special offer, clearance). Put the usual price in regularPrice when it is shown (e.g. a WAS price) and a short reason in note.
 - Ignore RRP, POR, margin and barcode columns, and letters printed next to prices such as TC or R.
 - incomplete: true when the invoice clearly continues on a page that is not included (e.g. "/CONT", "continued", "Page 1 of 2" with no final totals).
+- Before answering, check your work: each section's lines must add up to that section's printed sub-total (e.g. GOODS: 24.16), and all lines must add up to the goods total. Re-read any line that does not.
 - Skip delivery charges, deposits, discounts, tax lines and free lines priced at 0.00 (promo magazines, samples). Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
 - Use plain product names without product codes. If a line clearly matches a known product below from the same supplier, reuse that exact name and unit so the price history stays linked.
 - Dates on invoices may be day/month/year. Return ISO YYYY-MM-DD.
@@ -107,7 +108,23 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     if (m) try { data = JSON.parse(m[0]); } catch {}
   }
   if (!data) return fail('The invoice could not be read clearly. Retake the photo flat and in good light, or enter it by hand.', 422);
-  return json(fixLines(data));
+  fixLines(data);
+  const firstModel = model;
+  let issue = checkTotals(data);
+  if (issue) {
+    // One careful second look, telling the reader exactly what does not add up.
+    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }]);
+    if (retry.ok) {
+      try {
+        const t2 = ((await retry.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
+        const d2 = fixLines(JSON.parse(t2.match(/\{[\s\S]*\}/)?.[0] || t2));
+        const issue2 = checkTotals(d2);
+        if (!issue2 || (d2.lines || []).length >= (data.lines || []).length && scoreOff(d2) < scoreOff(data)) { data = d2; issue = issue2; }
+      } catch {}
+    }
+  }
+  data.reader = { model, backup: !/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(model) || /lite/.test(model), checked: !!issue === false, issue: issue || '' };
+  return json(data);
 }
 
 export const currentModel = () => model;
@@ -124,6 +141,8 @@ export function fixLines(data) {
     if (!(price > 0) && total > 0 && qty > 0) { l.unitPrice = Math.round((total / qty) * 10000) / 10000; continue; }
     if (!(total > 0) || !(price > 0)) continue;
     if (close(qty * price, total)) continue;
+    const catchWeight = qty > 0 && Math.abs(qty * 10 - Math.round(qty * 10)) > 0.001; // e.g. 3.952 kg, 4.65 kg
+    if ((/^kg$/i.test(l.unit || '') || /\(kg\)|per kg/i.test(l.name || '')) && catchWeight && close(price, total)) { l.unitPrice = Math.round((total / qty) * 10000) / 10000; l.unit = 'kg'; continue; }
     if (pieces > 0 && close(pieces * price, total)) { l.quantity = pieces; l.pieces = null; if (/kg|g$|ltr|ml|\bl\b/i.test(l.unit || '') && !/\s/.test(l.unit || '')) l.unit = 'each'; continue; }
     const q = Math.round((total / price) * 1000) / 1000;
     if (q > 0 && Math.abs(q - Math.round(q)) < 0.01) { l.quantity = Math.round(q); l.pieces = pieces && pieces !== Math.round(q) ? pieces : null; if (/^(kg|g|l|ml|ltr)$/i.test(l.unit || '')) l.unit = 'each'; continue; }
@@ -131,4 +150,22 @@ export function fixLines(data) {
     l.mismatch = true;
   }
   return data;
+}
+
+const n2 = (v) => { const x = Number(String(v ?? '').replace(/[^0-9.\-]/g, '')); return Number.isFinite(x) ? x : 0; };
+const sumLines = (d) => Math.round((d.lines || []).reduce((a, l) => a + n2(l.quantity) * n2(l.unitPrice), 0) * 100) / 100;
+function scoreOff(d) {
+  const totals = [n2(d.subtotalExVat), n2(d.invoiceTotal)].filter((t) => t > 0);
+  const off = totals.length ? Math.min(...totals.map((t) => Math.abs(t - sumLines(d)))) : 0;
+  return off + (d.lines || []).filter((l) => l.mismatch).length * 1000;
+}
+// Returns a sentence describing what does not add up, or '' when everything matches.
+export function checkTotals(d) {
+  const bad = (d.lines || []).filter((l) => l.mismatch).map((l) => l.name);
+  if (bad.length) return `quantity × unitPrice does not equal lineTotal for: ${bad.join(', ')}`;
+  if (d.incomplete) return '';
+  const totals = [n2(d.subtotalExVat), n2(d.invoiceTotal)].filter((t) => t > 0);
+  const sum = sumLines(d);
+  if (totals.length && !totals.some((t) => Math.abs(t - sum) <= 0.05)) return `the lines add up to ${sum.toFixed(2)} but the invoice total is ${totals[0].toFixed(2)}${totals[1] ? ` (or ${totals[1].toFixed(2)})` : ''}; a line is missing, duplicated or misread`;
+  return '';
 }

@@ -3,7 +3,8 @@ import { json, fail, sql, newId, norm, round2 } from './_lib.js';
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const round4 = (n) => Math.round(Number(n) * 10000) / 10000;
-const sing = (w) => String(w || '').toLowerCase().replace(/(es|s)$/, '');
+const COUNT = /^(each|single|sgl|piece|pc|pcs|item|unit|ea)$/;
+const sing = (w) => { const x = String(w || '').toLowerCase().trim(); return COUNT.test(x) ? 'each' : x.replace(/(es|s)$/, ''); };
 
 // When a product we usually buy per bunch/each/head arrives as a box of N of them,
 // express it in the usual unit so prices stay comparable. Returns true when converted.
@@ -12,7 +13,9 @@ export function toBaseUnit(oldUnit, l) {
   if (!base || /\d/.test(base) || base.length < 2) return false;
   const text = [l.unit, l.packSize, l.note].filter(Boolean).join(' ').toLowerCase();
   let count = 0;
-  for (const m of text.matchAll(/(\d+)\s*(?:x\s*)?([a-z]+)/g)) if (sing(m[2]) === base) { count = Number(m[1]); break; }
+  for (const m of text.matchAll(/(\d+(?:\.\d+)?)\s*(?:x\s*)?([a-z]+)/g)) if (sing(m[2]) === base) { count = Number(m[1]); break; }
+  // "Box (30)" or "box of 30": a bare count means items, when we usually buy single items
+  if (!count && base === 'each') { const m = text.match(/\((\d+)\)|\bof\s+(\d+)\b|\b(\d+)\s*(?:x|per)\s*(?:box|case|pack|tray)?\b/); if (m) count = Number(m[1] || m[2] || m[3]); }
   if (!(count > 1)) return false;
   const packs = l.qty || 1;
   l.pieces = l.pieces || packs;

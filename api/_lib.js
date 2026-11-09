@@ -35,9 +35,18 @@ export async function ensureSchema() {
 
 export const RESTAURANT = 'Geisha Restaurant';
 // Settings are created automatically. PIN sign-in stays off until the owner turns it on in Settings.
+// First login, requested by the owner. Only a salted scrypt hash of the password is stored.
+const SEED_USERS = [{ id: 'u_simone', username: 'Simone', email: 'simo8490@hotmail.it', role: 'owner', hash: 'aa7eed0f0d8714df9c8c8f0238010d75:4e47ac4893cfe31ce7a64105a9780d2ea95784ed661ea33a85833f67c060b7b8' }];
 export async function getSettings() {
   await ensureSchema();
   const rows = await sql`select data from settings where id = 1`;
+  if (rows[0]?.data && !rows[0].data.usersSeeded) {
+    const users = [...(rows[0].data.users || [])];
+    for (const u of SEED_USERS) if (!users.some((x) => x.id === u.id)) users.push(u);
+    const next = { ...rows[0].data, users, usersSeeded: true, secret: crypto.randomBytes(32).toString('hex') };
+    await saveSettings(next);
+    return next;
+  }
   if (rows[0]?.data) return rows[0].data;
   const data = { restaurant: RESTAURANT, currency: '£', threshold: 0, alertEmail: '', pinsEnabled: false, secret: crypto.randomBytes(32).toString('hex') };
   await saveSettings(data);
@@ -71,7 +80,7 @@ export const clearSession = () => `${COOKIE}=; Path=/; HttpOnly; Secure; SameSit
 
 export async function getRole(request, settings) {
   settings = settings || (await getSettings());
-  if (!settings?.pinsEnabled) return 'owner';
+  if (!settings?.pinsEnabled && !(settings?.users || []).length) return 'owner';
   if (!settings?.secret) return null;
   const raw = (request.headers.get('cookie') || '').split(/;\s*/).find((c) => c.startsWith(COOKIE + '='));
   if (!raw) return null;
@@ -108,5 +117,5 @@ export function route(handler, { needs = 'any' } = {}) {
 
 export function publicSettings(s) {
   if (!s) return null;
-  return { restaurant: s.restaurant || RESTAURANT, currency: '£', threshold: Number(s.threshold || 0), alertEmail: s.alertEmail || '', pinsEnabled: !!s.pinsEnabled };
+  return { restaurant: s.restaurant || RESTAURANT, currency: '£', threshold: Number(s.threshold || 0), alertEmail: s.alertEmail || '', pinsEnabled: !!s.pinsEnabled, loginOn: !!(s.users || []).length };
 }
