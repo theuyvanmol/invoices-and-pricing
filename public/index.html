@@ -687,7 +687,7 @@ function toSave(l){return {name:l.name.trim(),unit:(l.unit||'each').trim(),piece
 function impDraft(r){
   const sup=matchSupplier(r.supplier);
   return {supplierId:sup?sup.id:'new',newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:'',printedTotal:num(r.invoiceTotal),subtotal:num(r.subtotalExVat),
-    lines:(r.lines||[]).map(fromRead).filter(l=>l.name),incomplete:!!r.incomplete};
+    lines:(r.lines||[]).map(fromRead).filter(l=>l.name),incomplete:!!r.incomplete,sections:r.sections||[]};
 }
 function impProblem(r,d){
   if(r.readable===false)return 'Could not read: '+(r.problem||'unclear photo');
@@ -954,7 +954,7 @@ function reviewHTML(){
     ${scan.source==='ai'?'<p class="notice" style="margin-bottom:14px">Compare each line with the photo. Fix anything that was read wrong before saving.</p>':''}
     <div class="form2"><label class="fl"><span>Supplier</span>${supSel}</label><label class="fl" ${d.supplierId==='new'?'':'hidden'} id="dNewWrap"><span>New supplier name</span><input class="field" id="dNewSup" value="${esc(d.newSupplier||'')}" placeholder="Supplier name"></label><label class="fl"><span>${scan.kind==='pricelist'?'Reference (optional)':'Invoice number'}</span><input class="field mono" id="dNum" value="${esc(d.number)}" placeholder="e.g. INV-2041"></label><label class="fl"><span>${scan.kind==='pricelist'?'Prices valid from':'Invoice date'}</span><input class="field" id="dDate" type="date" value="${esc(d.date)}"></label></div>
     ${(()=>{const n=d.lines.filter(l=>lineIssue(l)&&l.name).length;return `<div class="share-l" style="margin-top:16px;align-items:center"><span class="small">${d.lines.length} line${d.lines.length===1?'':'s'}${n?` · <b style="color:var(--warn)">${n} to check</b>`:scan.source==='ai'?' · all add up':''}</span><button class="btn sm ghost" data-act="toggleAll">${d.lines.every(lineOpen)?'Hide details':'Edit all'}</button></div>`})()}
-    <div style="margin-top:4px" id="dLines">${d.lines.map((l,i)=>{const c=l.category||'';const head=c&&(i===0||(d.lines[i-1].category||'')!==c)?`<div class="sechead" data-cat="${esc(c)}"><span>${esc(c)}</span><b class="mono">${money(d.lines.filter(x=>(x.category||'')===c).reduce((a,x)=>a+lineTotal(x),0))}</b></div>`:'';return head+lineHTML(l,i)}).join('')}</div>
+    <div style="margin-top:4px" id="dLines">${d.lines.map((l,i)=>{const c=l.category||'';const head=c&&(i===0||(d.lines[i-1].category||'')!==c)?`<div class="sechead" data-cat="${esc(c)}"><span>${esc(c)}</span><b class="mono">${money(d.lines.filter(x=>(x.category||'')===c).reduce((a,x)=>a+lineTotal(x),0))}</b>${secNote(c)}</div>`:'';return head+lineHTML(l,i)}).join('')}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-act="addLine">+ Add line</button><button class="btn sm" data-act="pasteToggle">Paste from spreadsheet</button>${d.supplierId!=='new'&&S.prod.some(p=>p.supplierId===d.supplierId)?`<button class="btn sm" data-act="loadSup">Load ${esc(supName(d.supplierId))}'s products</button>`:''}</div>
     ${UI.paste?`<div class="pastebox"><label class="fl"><span>Paste rows copied from Excel, Google Sheets or an emailed invoice. One product per line: name, quantity, unit, price (in any order, the numbers are worked out).</span><textarea class="field" id="pasteText" placeholder="Tomatoes - Salad	1	box (6kg)	12.00&#10;Cucumber	4	each	0.75"></textarea></label><div style="display:flex;gap:8px"><button class="btn sm primary" data-act="pasteAdd">Add these lines</button><button class="btn sm" data-act="pasteToggle">Cancel</button></div></div>`:''}
     <p class="small muted hide-m" style="margin-top:8px">Tip: press <span class="kbd">Enter</span> in a price box to start the next line. ${scan.kind==='pricelist'?'':'Lines with no quantity are not saved.'}</p>
@@ -965,6 +965,7 @@ function reviewHTML(){
 }
 const lineTotal=l=>round2(num(l.qty)*num(l.price));
 function lineExtras(l){const bits=[];if(l.packSize)bits.push(`<span class="pill flat">Pack ${esc(l.packSize)}</span>`);if(l.vat!==''&&l.vat!=null)bits.push(`<span class="pill flat">VAT ${num(l.vat)}%</span>`);if(l.note)bits.push(`<span class="small muted">${esc(l.note)}</span>`);return bits.join('')}
+function secNote(c){const sec=(scan.draft?.sections||[]).find(x=>String(x.name||'').toLowerCase()===String(c).toLowerCase());if(!sec||!(num(sec.subtotal)>0))return '';const got=round2(scan.draft.lines.filter(x=>(x.category||'')===c).reduce((a,x)=>a+lineTotal(x),0));return Math.abs(got-num(sec.subtotal))>0.05?`<span class="pill up" style="text-transform:none;letter-spacing:0">Invoice says ${money(num(sec.subtotal))}</span>`:'<span class="pill down" style="text-transform:none;letter-spacing:0">✓ matches</span>'}
 function lineIssue(l){return !String(l.name||'').trim()||!(num(l.price)>0)||(scan.kind!=='pricelist'&&!(num(l.qty)>0))||(num(l.printed)>0&&Math.abs(lineTotal(l)-num(l.printed))>0.02)}
 function lineOpen(l){return l._open??(scan.source!=='ai'||lineIssue(l))}
 function lineSum(l,i){const open=lineOpen(l),bad=num(l.printed)>0&&Math.abs(lineTotal(l)-num(l.printed))>0.02;
@@ -1011,7 +1012,7 @@ async function readInvoice(){
     scan.source='ai';
     if(scan.kind==='pricelist'&&scan.supplierId&&scan.supplierId!=='new'&&!sup)scan.draft=null;
     scan.draft={supplierId:sup?sup.id:(scan.kind==='pricelist'&&scan.supplierId?scan.supplierId:'new'),newSupplier:sup?'':(r.supplier||''),number:String(r.invoiceNumber||''),date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:todayISO(),printedTotal:num(r.invoiceTotal),
-      lines:r.lines.map(fromRead).map(l=>({...l,qty:l.qty||'1'})).filter(l=>l.name),incomplete:!!r.incomplete};
+      lines:r.lines.map(fromRead).map(l=>({...l,qty:l.qty||'1'})).filter(l=>l.name),incomplete:!!r.incomplete,sections:r.sections||[]};
     if(r.incomplete)scan.error='This looks like only part of a longer invoice. Use “Add page and read again” to add the other page(s).';
     else if(r.reader?.issue)scan.error='Some lines may be wrong: '+r.reader.issue.replace('quantity × unitPrice does not equal lineTotal for','quantity × price does not match the invoice for')+'. Check the highlighted lines against the photo.';
     else if(r.reader?.backup)scan.error='Read with the backup reader because today’s free limit on the main reader was used up. Check each line carefully.';
@@ -1152,7 +1153,7 @@ function render(){
 }
 function refreshCmp(){
   document.querySelectorAll('#dLines .line').forEach(el=>{const i=+el.dataset.line;const l=scan.draft.lines[i];if(l){const sum=el.querySelector('.lsum');const tmp=document.createElement('div');tmp.innerHTML=lineSum(l,i);sum.replaceWith(tmp.firstChild);el.classList.toggle('issue',!!(lineIssue(l)&&l.name))}});
-  document.querySelectorAll('#dLines .sechead').forEach(el=>{const c=el.dataset.cat;const t=scan.draft.lines.filter(l=>(l.category||'')===c).reduce((a,l)=>a+lineTotal(l),0);const b=el.querySelector('b.mono');if(b)b.textContent=money(t)});
+  document.querySelectorAll('#dLines .sechead').forEach(el=>{const c=el.dataset.cat;const t=scan.draft.lines.filter(l=>(l.category||'')===c).reduce((a,l)=>a+lineTotal(l),0);const b=el.querySelector('b.mono');if(b)b.textContent=money(t);const old=el.querySelector('.pill');const tmp=document.createElement('div');tmp.innerHTML=secNote(c);if(old)old.remove();if(tmp.firstChild)el.appendChild(tmp.firstChild)});
   const t=$('#dTot');if(t)t.textContent=money(draftTotal());
   const printed=num(scan.draft.printedTotal),mm=$('#dMismatch');if(mm)mm.innerHTML=printed>0&&Math.abs(printed-draftTotal())>0.05?'<p class="notice" style="margin-top:10px;color:var(--warn)">The lines do not add up to the printed total. VAT, delivery or a missed line can cause this. Check the photo.</p>':'';
 }

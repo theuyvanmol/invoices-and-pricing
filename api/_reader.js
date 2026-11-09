@@ -58,7 +58,7 @@ export async function readInvoice(photos, testModel) {
   ]);
   const prompt = `These ${urls.length} photo(s) are the pages, in order, of ONE supplier invoice or delivery note for a restaurant.
 Extract every purchased line item. Reply with ONLY a JSON object, no other text:
-{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","category":"Chilled","packSize":"1 x 2.5kg","pieces":null,"quantity":1,"unit":"pack 2.5kg","unitPrice":13.45,"lineTotal":13.45,"vatRate":0,"promo":false,"regularPrice":null,"note":""}],"subtotalExVat":0,"invoiceTotal":0,"incomplete":false,"readable":true,"problem":""}
+{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","category":"Chilled","packSize":"1 x 2.5kg","pieces":null,"quantity":1,"unit":"pack 2.5kg","unitPrice":13.45,"lineTotal":13.45,"vatRate":0,"promo":false,"regularPrice":null,"note":""}],"sections":[{"name":"Chilled","subtotal":20.63}],"subtotalExVat":0,"invoiceTotal":0,"incomplete":false,"readable":true,"problem":""}
 Rules:
 - quantity × unitPrice must equal lineTotal, exactly as the invoice charges it. unitPrice is the price for ONE unit, before VAT/tax when both are shown. Never return the line total as unitPrice.
 - Weighed items are ONLY lines priced per kg, where weight × price = value (e.g. meat: Qty 2, Unit 3.44kg, Price 9.50, Value 32.68 → pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50). A pack size such as "1 2.5kg", "4 2.5kg" or "1 1ltr" is NOT a weight to multiply: then quantity is the number of packs (QTY column), unit is the pack (e.g. "pack 2.5kg", "case 4x2.5kg") and pieces is null.
@@ -73,6 +73,8 @@ Rules:
 - promo: true when the line's price is a temporary reduction (short life, condition, price override, special offer, clearance). Put the usual price in regularPrice when it is shown (e.g. a WAS price) and a short reason in note.
 - Ignore RRP, POR, margin and barcode columns, and letters printed next to prices such as TC or R.
 - incomplete: true when the invoice clearly continues on a page that is not included (e.g. "/CONT", "continued", "Page 1 of 2" with no final totals).
+- Boxes at the top such as "SUBSTITUTION DETAILS", "items at a reduced price", "not available" or "out of stock" are NOTES, not extra lines. Never add them as lines. Use a reduced-price note only to set promo, regularPrice (the WAS price) and note on the matching line in the invoice details. Out-of-stock items are not charged unless they also appear in the invoice details.
+- sections: every section heading with its printed sub-total (e.g. Booker "FROZEN FOOD ... GOODS : 176.16" → {"name":"Frozen Food","subtotal":176.16}). Empty list when there are no sections.
 - Before answering, check your work: each section's lines must add up to that section's printed sub-total (e.g. GOODS: 24.16), and all lines must add up to the goods total. Re-read any line that does not.
 - Skip delivery charges, deposits, discounts, tax lines and free lines priced at 0.00 (promo magazines, samples). Put the grand total printed on the invoice in invoiceTotal, and the goods total before VAT in subtotalExVat (same as invoiceTotal when there is no VAT).
 - Use plain product names without product codes. If a line clearly matches a known product below from the same supplier, reuse that exact name and unit so the price history stays linked.
@@ -149,6 +151,15 @@ export function fixLines(data) {
     if (q > 0) { l.quantity = q; continue; }
     l.mismatch = true;
   }
+  // Drop a line that repeats another (e.g. a reduced-price note read as a second line).
+  const seen = [];
+  data.lines = (data.lines || []).filter((l) => {
+    const key = String(l.name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const twin = seen.find((x) => x.key === key && n(x.l.quantity) === n(l.quantity) && (close(n(x.l.unitPrice), n(l.unitPrice)) || close(n(x.l.unitPrice), n(l.regularPrice)) || close(n(l.unitPrice), n(x.l.regularPrice)) || n(x.l.regularPrice) > 0 || n(l.regularPrice) > 0));
+    if (twin) { const keep = twin.l.promo && !l.promo ? twin.l : l; /* the charged line: later on the page, or the reduced one */ Object.assign(twin.l, keep, { promo: twin.l.promo || l.promo, regularPrice: n(twin.l.regularPrice) || n(l.regularPrice) || null }); return false; }
+    seen.push({ key, l });
+    return true;
+  });
   return data;
 }
 
@@ -163,6 +174,12 @@ function scoreOff(d) {
 export function checkTotals(d) {
   const bad = (d.lines || []).filter((l) => l.mismatch).map((l) => l.name);
   if (bad.length) return `quantity × unitPrice does not equal lineTotal for: ${bad.join(', ')}`;
+  for (const sec of d.sections || []) {
+    const want = n2(sec.subtotal), name = String(sec.name || '').toLowerCase();
+    if (!(want > 0) || !name) continue;
+    const got = Math.round((d.lines || []).filter((l) => String(l.category || '').toLowerCase() === name).reduce((a, l) => a + n2(l.quantity) * n2(l.unitPrice), 0) * 100) / 100;
+    if (got > 0 && Math.abs(got - want) > 0.05) return `the ${sec.name} lines add up to ${got.toFixed(2)} but the printed ${sec.name} sub-total is ${want.toFixed(2)}; a line is missing, counted twice or misread`;
+  }
   if (d.incomplete) return '';
   const totals = [n2(d.subtotalExVat), n2(d.invoiceTotal)].filter((t) => t > 0);
   const sum = sumLines(d);
