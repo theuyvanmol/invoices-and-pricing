@@ -4,6 +4,9 @@ import { json, fail, sql, newId, norm, round2 } from './_lib.js';
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const round4 = (n) => Math.round(Number(n) * 10000) / 10000;
 const COUNT = /^(each|single|sgl|piece|pc|pcs|item|unit|ea)$/;
+// Looser product key, so "Lemons" and "lemon" or "Onion Spring" and "Spring Onions" are the same product.
+const FILL = new Set(['fresh', 'the', 'of', 'and', 'a', 'with']);
+export const looseKey = (s) => norm(s).split(' ').filter((w) => w && !FILL.has(w)).map((w) => (/\d/.test(w) ? w : w.replace(/ies$/, 'y').replace(/(oes|ses|xes|ches|shes)$/, (m) => m.slice(0, -2)).replace(/s$/, ''))).sort().join(' ');
 const sing = (w) => { const x = String(w || '').toLowerCase().trim(); return COUNT.test(x) ? 'each' : x.replace(/(es|s)$/, ''); };
 
 // When a product we usually buy per bunch/each/head arrives as a box of N of them,
@@ -73,15 +76,21 @@ export async function saveInvoice(b, { role, settings, origin }) {
     : [];
   const priorOf = Object.fromEntries(lastPrices.map((r) => [r.product_id, { price: Number(r.price), date: r.date }]));
   const byNorm = Object.fromEntries(existing.map((p) => [p.norm, p]));
+  const byLoose = {};
+  for (const p of existing) { const k = looseKey(p.name); byLoose[k] = byLoose[k] === undefined ? p : null; } // null = more than one, not safe
 
   const invoiceId = newId('i');
   const threshold = Number(settings.threshold || 0);
+  // Bulk-imported old invoices build history without alerts, but anything from the last 14 days still alerts.
+  const recent = date >= new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  const alertsOn = !b.manualPrice && (!b.historic || recent);
   const invLines = [], alerts = [], pointQueries = [];
   let news = 0;
   for (const l of lines) {
     if (l.other) { invLines.push({ productId: null, name: l.name, unit: l.unit, pieces: l.pieces, qty: l.qty, price: l.price, total: round2(l.qty * l.price), category: l.category, vat: l.vat, note: l.note, other: true }); continue; }
     const key = norm(l.name);
-    let p = byNorm[key];
+    let p = byNorm[key] || byLoose[looseKey(l.name)] || null;
+    if (p && !byNorm[key]) byNorm[key] = p;
     if (!p) {
       p = { id: newId('p'), name: l.name, unit: l.unit, norm: key, isNew: true };
       byNorm[key] = p; news++;
@@ -92,7 +101,7 @@ export async function saveInvoice(b, { role, settings, origin }) {
       queries.push(sql`update products set unit = ${l.unit} where id = ${p.id}`);
     }
     const prior = p.isNew ? null : priorOf[p.id];
-    if (prior && prior.price > 0 && !b.historic && !l.promo) {
+    if (prior && prior.price > 0 && alertsOn && !l.promo) {
       const diff = round2(l.price - prior.price), pct = (diff / prior.price) * 100;
       // A different unit or pack size (e.g. bunch -> box of 12) is not a price rise, so no alert.
       const sameUnit = p.isNew || norm(p.unit) === norm(l.unit);
@@ -108,7 +117,7 @@ export async function saveInvoice(b, { role, settings, origin }) {
   await sql.transaction(queries);
 
   let emailed = false;
-  if (!b.historic && alerts.length && settings.alertEmail && process.env.RESEND_API_KEY) emailed = await sendAlertEmail(settings, supplierName, number, date, alerts, origin);
+  if (alerts.length && settings.alertEmail && process.env.RESEND_API_KEY) emailed = await sendAlertEmail(settings, supplierName, number, date, alerts, origin);
 
   if (b.driveFileId) await sql`update drive_files set status = 'saved', invoice_id = ${invoiceId}, message = ${supplierName + ' · ' + date}, updated_at = now() where file_id = ${String(b.driveFileId)}`;
   return json({ ok: true, id: invoiceId, supplier: supplierName, number, total, lines: invLines.length, ups: alerts.length, news, emailed });

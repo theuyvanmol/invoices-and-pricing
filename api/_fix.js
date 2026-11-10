@@ -30,6 +30,35 @@ export async function convertLine(invoiceId, productId, count, unit) {
   return { ok: true, ...changed, unit };
 }
 
+// Corrects the price of one product on one saved invoice (a misread or a credit agreed later).
+export async function setLinePrice(invoiceId, productId, price) {
+  price = round4(price);
+  if (!(price > 0)) return { ok: false, error: 'Enter a price above zero.' };
+  const inv = (await sql`select id, lines from invoices where id = ${invoiceId}`)[0];
+  if (!inv) return { ok: false, error: 'Invoice not found.' };
+  let hit = false;
+  const lines = (inv.lines || []).map((l) => {
+    if (l.productId !== productId || hit) return l;
+    hit = true;
+    return { ...l, price, total: Math.round(Number(l.qty) * price * 100) / 100, note: [String(l.note || '').replace(/ ?· ?Price corrected.*$/, ''), `Price corrected from ${l.price}`].filter(Boolean).join(' · ') };
+  });
+  if (!hit) return { ok: false, error: 'That product is not on this invoice.' };
+  const total = Math.round(lines.reduce((a, l) => a + (Number(l.total ?? Number(l.qty) * Number(l.price)) || 0), 0) * 100) / 100;
+  const al = (await sql`select id, from_price from alerts where invoice_id = ${invoiceId} and product_id = ${productId}`)[0];
+  const q = [
+    sql`update invoices set lines = ${JSON.stringify(lines)}::jsonb, total = ${total} where id = ${invoiceId}`,
+    sql`update price_points set price = ${price} where invoice_id = ${invoiceId} and product_id = ${productId}`,
+  ];
+  if (al) {
+    const from = Number(al.from_price), diff = Math.round((price - from) * 100) / 100;
+    q.push(diff > 0.004
+      ? sql`update alerts set to_price = ${price}, diff = ${diff}, pct = ${Math.round((diff / from) * 10000) / 100} where id = ${al.id}`
+      : sql`delete from alerts where id = ${al.id}`);
+  }
+  await sql.transaction(q);
+  return { ok: true, price, total };
+}
+
 // One-off repairs for data saved before the pack-size fix. Each runs once.
 const REPAIRS = [
   { key: 'spring-onions-F60870059', invoiceNumber: 'F60870059', product: 'spring onions', fromUnit: 'box', count: 12, unit: 'bunch' },
