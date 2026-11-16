@@ -20,8 +20,10 @@ export async function listModels() {
 }
 
 // Tries the preferred model, then other free Flash models when Google is busy (503), rate-limited (429) or the model is gone (404).
-async function callGemini(parts, only) {
-  const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } });
+// Thinking is what makes Gemini slow. A first read uses little; the careful second look (totals did not add up) uses more.
+const noThink = new Set();
+async function callGemini(parts, only, think = 'low') {
+  const bodyFor = (m) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'low' ? 512 : 4096 } } : {}) : {}) } });
   const started = Date.now();
   const tried = new Set();
   let queue = only ? [only] : [model, ...BACKUPS], listed = !!only, last = null;
@@ -34,10 +36,11 @@ async function callGemini(parts, only) {
       const left = 50000 - (Date.now() - started);
       if (left < 6000) break;
       try {
-        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body, signal: AbortSignal.timeout(Math.min(20000, left - 2000)) });
+        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: bodyFor(m), signal: AbortSignal.timeout(Math.min(20000, left - 2000)) });
       } catch (e) { callGemini.log.push(`${m}:timeout:${Math.round((Date.now() - started) / 1000)}s`); last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
       callGemini.log.push(`${m}:${last.status}:${Math.round((Date.now() - started) / 1000)}s`);
       if (last.ok) { model = m; return last; }
+      if (last.status === 400 && !noThink.has(m)) { const t = await last.clone().text(); if (/thinking/i.test(t)) { noThink.add(m); attempt--; continue; } }
       if (last.status === 503 && attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
       break;
     }
@@ -52,6 +55,12 @@ export async function readInvoice(photos, testModel) {
   const urls = (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(String(u))).slice(0, 5);
   if (!urls.length) return fail('Add a photo of the invoice first.');
 
+  const t0 = Date.now();
+  const imagesP = Promise.all(urls.map(async (u) => {
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('photo');
+    return { inline_data: { mime_type: r.headers.get('content-type') || 'image/jpeg', data: Buffer.from(await r.arrayBuffer()).toString('base64') } };
+  })).catch(() => null);
   const [sup, prod] = await sql.transaction([
     sql`select name from suppliers order by name limit 100`,
     sql`select p.name, p.unit, s.name as supplier from products p join suppliers s on s.id = p.supplier_id order by s.name, p.name limit 700`,
@@ -85,12 +94,8 @@ Known suppliers: ${sup.map((s) => s.name).join('; ') || 'none yet'}
 Known products (name (unit) — supplier):
 ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none yet'}`;
 
-  const images = [];
-  for (const u of urls) {
-    const r = await fetch(u);
-    if (!r.ok) return fail('A photo could not be loaded. Take it again.', 422);
-    images.push({ inline_data: { mime_type: r.headers.get('content-type') || 'image/jpeg', data: Buffer.from(await r.arrayBuffer()).toString('base64') } });
-  }
+  const images = await imagesP;
+  if (!images) return fail('A photo could not be loaded. Take it again.', 422);
   const res = await callGemini([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null);
   if (!res.ok) {
     const t = await res.text();
@@ -115,7 +120,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   let issue = checkTotals(data);
   if (issue) {
     // One careful second look, telling the reader exactly what does not add up.
-    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }]);
+    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'medium');
     if (retry.ok) {
       try {
         const t2 = ((await retry.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
@@ -125,7 +130,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
       } catch {}
     }
   }
-  data.reader = { model, backup: !/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(model) || /lite/.test(model), checked: !!issue === false, issue: issue || '' };
+  data.reader = { model, backup: !/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(model) || /lite/.test(model), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: callGemini.log || [] };
   return json(data);
 }
 

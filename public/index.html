@@ -1043,7 +1043,7 @@ function vScan(){
       ${scan.photos.length||pl?'':`<button class="btn bigbtn" data-go="import" style="width:100%;max-width:760px">${I.import}Import many / Google Drive folder</button>`}
     </div></section>`;
   }else if(st==='reading'){
-    h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted">Uploading the photos, then finding the supplier, every product, quantity and price. This takes about 20–40 seconds.</p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
+    h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted" id="readStage">${esc(scan.stage||'Reading every product, quantity and price.')}</p><p class="mono small muted" id="readSecs"></p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
   }else if(st==='review'||st==='saving'){
     if(scan.error)h+=`<div class="banner alert" style="margin-bottom:14px"><div class="grow">${esc(scan.error)}</div></div>`;
     h+=reviewHTML();
@@ -1134,35 +1134,41 @@ function lineDesc(l){if(!num(l.qty)||!num(l.price))return '';const u=(l.unit||''
 async function shrink(file){
   try{
     const url=URL.createObjectURL(file);const img=new Image();img.src=url;await img.decode();
-    const m=2400,sc=Math.min(1,m/Math.max(img.naturalWidth,img.naturalHeight));
+    const m=2000,sc=Math.min(1,m/Math.max(img.naturalWidth,img.naturalHeight));
     const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);
     c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
-    const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.88));return b||file;
+    const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.85));return b||file;
   }catch(e){return file}
 }
 async function addPhotos(files){
   const max=MAX_PAGES;
-  for(const f of files){if(scan.photos.length>=max){toast(`Up to ${max} pages per invoice.`);break}const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);if(isPdf){if(f.size>4*1024*1024){toast('That PDF is over 4 MB. Save it smaller or take a photo instead.');continue}const b=f.type?f:new Blob([f],{type:'application/pdf'});scan.photos.push({blob:b,url:URL.createObjectURL(b),pdf:true});continue}if(!/^image\//.test(f.type)&&!/\.(jpe?g|png|heic|webp)$/i.test(f.name)){toast('Choose a photo (JPG or PNG) or a PDF.');continue}const b=await shrink(f);scan.photos.push({blob:b,url:URL.createObjectURL(b)})}
+  for(const f of files){if(scan.photos.length>=max){toast(`Up to ${max} pages per invoice.`);break}const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);if(isPdf){if(f.size>4*1024*1024){toast('That PDF is over 4 MB. Save it smaller or take a photo instead.');continue}const b=f.type?f:new Blob([f],{type:'application/pdf'});const ph={blob:b,url:URL.createObjectURL(b),pdf:true};scan.photos.push(ph);preUpload(ph);continue}if(!/^image\//.test(f.type)&&!/\.(jpe?g|png|heic|webp)$/i.test(f.name)){toast('Choose a photo (JPG or PNG) or a PDF.');continue}const b=await shrink(f);const ph={blob:b,url:URL.createObjectURL(b)};scan.photos.push(ph);preUpload(ph)}
   scan.error='';render();
 }
 
 let readAbort=null;
+function preUpload(p){
+  if(p.remote||p.up||!p.blob)return p.up;
+  p.up=api('/api/upload',{method:'POST',body:p.blob,headers:{'content-type':'application/octet-stream','x-file-type':p.blob.type||'image/jpeg'}}).then(r=>{p.remote=r.url;return r.url}).catch(e=>{p.up=null;throw e});
+  p.up.catch(()=>{});return p.up;
+}
 async function uploadPhotos(){
-  for(const p of scan.photos){
-    if(p.remote)continue;
-    const r=await api('/api/upload',{method:'POST',body:p.blob,headers:{'content-type':'application/octet-stream','x-file-type':p.blob.type||'image/jpeg'}});
-    p.remote=r.url;
-  }
+  await Promise.all(scan.photos.map(p=>p.remote||preUpload(p)));
   return scan.photos.map(p=>p.remote);
 }
 async function readInvoice(){
   if(S.features.ai===false){scan.error='Automatic reading is not switched on yet. Enter the invoice by hand.';startManual();return}
   scan.step='reading';scan.error='';render();
   const myRun=(readAbort={cancelled:false});
+  const t0=Date.now(),setStage=x=>{scan.stage=x;const e=$('#readStage');if(e)e.textContent=x};
+  const tick=setInterval(()=>{const e=$('#readSecs');if(scan.step!=='reading'){clearInterval(tick);return}if(e)e.textContent=Math.round((Date.now()-t0)/1000)+' s';if(Date.now()-t0>25000)setStage('Taking a second look to check the totals add up…')},1000);
   try{
+    setStage(scan.photos.every(p=>p.remote)?'Reading every product, quantity and price.':'Sending the photo…');
     const urls=await uploadPhotos();
     if(myRun.cancelled)return;
+    setStage('Reading every product, quantity and price.');
     const r=await api('/api/read',{method:'POST',body:{photos:urls}});
+    clearInterval(tick);
     if(myRun.cancelled)return;
     if(!r||r.readable===false||!Array.isArray(r.lines)||!r.lines.length){scan.step='capture';scan.error=(r&&r.problem)?'This could not be read: '+r.problem+' Retake the photo or enter it by hand.':'No line items were found. Retake the photo in better light, or enter it by hand.';render();return}
     const sup=matchSupplier(r.supplier);
