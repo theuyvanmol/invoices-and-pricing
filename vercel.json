@@ -3,7 +3,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/read.js": {
-      "maxDuration": 60
+      "maxDuration": 120
     },
     "api/invoices.js": {
       "maxDuration": 30

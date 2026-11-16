@@ -1167,7 +1167,17 @@ async function readInvoice(){
     const urls=await uploadPhotos();
     if(myRun.cancelled)return;
     setStage('Reading every product, quantity and price.');
-    const r=await api('/api/read',{method:'POST',body:{photos:urls}});
+    let r;
+    for(let attempt=0;;attempt++){
+      try{r=await api('/api/read',{method:'POST',body:{photos:urls}});break}
+      catch(e){
+        // Timeouts, Google being busy and dropped connections usually work on a second try.
+        const again=attempt===0&&!myRun.cancelled&&(e.offline||e.status===502||e.status===503||e.status===504||e.status===500)&&!/limit was reached|not valid|not allowed|switched on/i.test(e.message);
+        if(!again)throw e;
+        setStage('Google was slow to answer. Trying again…');await sleep(e.offline?3000:1500);
+        if(myRun.cancelled)return;
+      }
+    }
     clearInterval(tick);
     if(myRun.cancelled)return;
     if(!r||r.readable===false||!Array.isArray(r.lines)||!r.lines.length){scan.step='capture';scan.error=(r&&r.problem)?'This could not be read: '+r.problem+' Retake the photo or enter it by hand.':'No line items were found. Retake the photo in better light, or enter it by hand.';render();return}
@@ -1182,7 +1192,8 @@ async function readInvoice(){
     scan.step='review';lastView=null;render();
   }catch(e){
     if(myRun.cancelled)return;
-    scan.step='capture';scan.error=e.message;render();
+    clearInterval(tick);
+    scan.step='capture';scan.error=(e.status===504||/timed out|could not be read right now/i.test(e.message)?'Reading took too long this time. Press “Read invoice” to try again, or type it in.':e.message);render();
   }
 }
 function startManual(){

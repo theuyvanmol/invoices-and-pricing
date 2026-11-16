@@ -22,21 +22,21 @@ export async function listModels() {
 // Tries the preferred model, then other free Flash models when Google is busy (503), rate-limited (429) or the model is gone (404).
 // Thinking is what makes Gemini slow. A first read uses little; the careful second look (totals did not add up) uses more.
 const noThink = new Set();
-async function callGemini(parts, only, think = 'low') {
+async function callGemini(parts, only, think = 'low', budget = 60000) {
   const bodyFor = (m) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'low' ? 512 : 4096 } } : {}) : {}) } });
   const started = Date.now();
   const tried = new Set();
   let queue = only ? [only] : [model, ...BACKUPS], listed = !!only, last = null;
   callGemini.log = [];
-  while (queue.length && Date.now() - started < 48000) {
+  while (queue.length && Date.now() - started < budget - 4000) {
     const m = queue.shift();
     if (tried.has(m)) continue;
     tried.add(m);
     for (let attempt = 0; attempt < 2; attempt++) {
-      const left = 50000 - (Date.now() - started);
+      const left = budget - (Date.now() - started);
       if (left < 6000) break;
       try {
-        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: bodyFor(m), signal: AbortSignal.timeout(Math.min(20000, left - 2000)) });
+        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: bodyFor(m), signal: AbortSignal.timeout(Math.min(40000, left - 2000)) });
       } catch (e) { callGemini.log.push(`${m}:timeout:${Math.round((Date.now() - started) / 1000)}s`); last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
       callGemini.log.push(`${m}:${last.status}:${Math.round((Date.now() - started) / 1000)}s`);
       if (last.ok) { model = m; return last; }
@@ -118,9 +118,9 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   fixLines(data);
   const firstModel = model;
   let issue = checkTotals(data);
-  if (issue) {
-    // One careful second look, telling the reader exactly what does not add up.
-    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'medium');
+  if (issue && Date.now() - t0 < 60000) {
+    // One careful second look (only when there is time left before the 120 s limit), telling the reader exactly what does not add up.
+    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'medium', Math.max(15000, 105000 - (Date.now() - t0)));
     if (retry.ok) {
       try {
         const t2 = ((await retry.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
