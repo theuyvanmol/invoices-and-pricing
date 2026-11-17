@@ -5,7 +5,7 @@ import { json, fail, sql } from './_lib.js';
 export const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 // Free models in order: the best readers first, the Lite ones last. Each has its own free daily allowance,
 // so when one is used up (or busy) the next one takes over.
-const ORDER = [...new Set([process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'].filter(Boolean))];
+const ORDER = [...new Set([process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'].filter(Boolean))];
 export let model = ORDER[0];
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -39,6 +39,7 @@ async function loadCool() {
 async function coolDown(m, status, body) {
   let until;
   if (status === 404) until = Date.now() + 24 * 3600e3;
+  else if (status === 503) until = Date.now() + 120e3;
   else if (/PerDay/i.test(body)) until = nextPacificMidnight();
   else { const d = Number((body.match(/"retryDelay":\s*"(\d+)/) || [])[1]); until = Date.now() + Math.min(120, Math.max(20, d || 60)) * 1000; }
   cool = { ...(cool || {}), [m]: until };
@@ -53,9 +54,10 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
   await loadCool();
   const ok = (m) => only || !(cool[m] > Date.now());
   let queue = only ? [only] : ORDER.filter(ok), listed = !!only, last = null;
-  callGemini.log = [];
+  const log = [];
+  callGemini.log = log;
   if (!queue.length) { listed = true; queue = (await listModels()).filter(ok); }
-  if (!queue.length) { callGemini.log.push('all-used-up'); return { ok: false, status: 429, allUsed: true, text: async () => '{"error":{"message":"All free readers used up today"}}', clone() { return this; } }; }
+  if (!queue.length) { log.push('all-used-up'); return { log, ok: false, status: 429, allUsed: true, text: async () => '{"error":{"message":"All free readers used up today"}}', clone() { return this; } }; }
   const sec = () => Math.round((Date.now() - started) / 1000);
   // One request to one model. Retries once when Google is briefly busy; remembers used-up models.
   const attempt = (m) => {
@@ -67,15 +69,15 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
         let r;
         const timer = setTimeout(() => ctl.abort(), Math.min(45000, left - 2000));
         try { r = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: bodyFor(m), signal: ctl.signal }); }
-        catch { clearTimeout(timer); callGemini.log.push(`${m}:stopped:${sec()}s`); return { ok: false, status: 504, m, text: async () => '{"error":{"message":"Timed out"}}', clone() { return this; } }; }
+        catch { clearTimeout(timer); log.push(`${m}:stopped:${sec()}s`); return { ok: false, status: 504, m, text: async () => '{"error":{"message":"Timed out"}}', clone() { return this; } }; }
         clearTimeout(timer);
         r.m = m;
-        callGemini.log.push(`${m}:${r.status}:${sec()}s`);
+        log.push(`${m}:${r.status}:${sec()}s`);
         if (r.ok) return r;
         const t = await r.clone().text().catch(() => '');
         if (r.status === 400 && !noThink.has(m) && /thinking/i.test(t)) { noThink.add(m); a--; continue; }
         if (r.status === 503 && a === 0) { await new Promise((z) => setTimeout(z, 1500)); continue; }
-        if ((r.status === 429 || r.status === 404) && !only) await coolDown(m, r.status, t);
+        if ((r.status === 429 || r.status === 404 || r.status === 503) && !only) await coolDown(m, r.status, t);
         return r;
       }
       return { ok: false, status: 504, m, text: async () => '{"error":{"message":"Out of time"}}', clone() { return this; } };
@@ -102,15 +104,15 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
     let r = await Promise.race([a.p, new Promise((z) => setTimeout(() => z(null), HEDGE))]);
     if (r === null) {
       const m2 = !only && budget - (Date.now() - started) > 15000 ? await next() : null;
-      if (m2) { callGemini.log.push(`slow, also asking ${m2}:${sec()}s`); r = await firstOk([a, attempt(m2)]); }
+      if (m2) { log.push(`slow, also asking ${m2}:${sec()}s`); r = await firstOk([a, attempt(m2)]); }
       else r = await a.p;
     }
     last = r;
-    if (r.ok) { model = r.m; return r; }
-    if (![404, 429, 500, 503, 504].includes(r.status)) return r;
+    if (r.ok) { model = r.m; r.model = r.m; return Object.assign(r, { log }); }
+    if (![404, 429, 500, 503, 504].includes(r.status)) return Object.assign(r, { log });
     m = await next();
   }
-  return last;
+  return Object.assign(last || { ok: false, status: 504, text: async () => '{}', clone() { return this; } }, { log });
 }
 
 export async function readInvoice(photos, testModel) {
@@ -161,17 +163,17 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
 
   const images = await imagesP;
   if (!images) return fail('A photo could not be loaded. Take it again.', 422);
-  const res = await callGemini([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null);
+  const res = await callGemini([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000);
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
     if (res.status === 400 && /API key/i.test(t)) return fail('The Gemini key is not valid. Check GEMINI_API_KEY in the Vercel project settings.', 502);
     if (res.status === 403) return fail('The Gemini key is not allowed to use this service. Check it in Google AI Studio.', 502);
-    if (res.allUsed || (res.status === 429 && (callGemini.log || []).length > 2)) return fail('Today\'s free reading allowance is used up on every reader. It starts again at 8am UK time. Enter this invoice by hand for now, or switch on paid reading for no daily limit.', 429, { code: 'AI_LIMIT' });
+    if (res.allUsed || (res.status === 429 && (res.log || []).length > 2)) return fail('Today\'s free reading allowance is used up on every reader. It starts again at 8am UK time. Enter this invoice by hand for now, or switch on paid reading for no daily limit.', 429, { code: 'AI_LIMIT' });
     if (res.status === 429) return fail('The free reading limit was reached for now. Wait a minute and try again, or enter it by hand.', 503);
     let why = '';
     try { why = JSON.parse(t).error?.message || ''; } catch {}
-    return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502, { detail: `Gemini ${res.status}: ${why.slice(0, 200)} | tried ${(callGemini.log || []).join(', ')}` });
+    return fail('The invoice could not be read right now. Try again, or enter it by hand.', 502, { detail: `Gemini ${res.status}: ${why.slice(0, 200)} | tried ${(res.log || []).join(', ')}` });
   }
   const out = await res.json();
   const text = (out.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
@@ -182,21 +184,23 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   }
   if (!data) return fail('The invoice could not be read clearly. Retake the photo flat and in good light, or enter it by hand.', 422);
   fixLines(data);
-  const firstModel = model;
+  let usedModel = null, retryLog = null;
   let issue = checkTotals(data);
   if (issue && Date.now() - t0 < 30000) {
     // One careful second look (only when there is time left before the 120 s limit), telling the reader exactly what does not add up.
     const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'low', 35000);
+    retryLog = retry.log;
     if (retry.ok) {
       try {
         const t2 = ((await retry.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
         const d2 = fixLines(JSON.parse(t2.match(/\{[\s\S]*\}/)?.[0] || t2));
         const issue2 = checkTotals(d2);
-        if (!issue2 || (d2.lines || []).length >= (data.lines || []).length && scoreOff(d2) < scoreOff(data)) { data = d2; issue = issue2; }
+        if (!issue2 || (d2.lines || []).length >= (data.lines || []).length && scoreOff(d2) < scoreOff(data)) { data = d2; issue = issue2; usedModel = retry.model; }
       } catch {}
     }
   }
-  data.reader = { model, backup: !/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(model) || /lite/.test(model), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: callGemini.log || [] };
+  const used = usedModel || res.model || model;
+  data.reader = { model: used, backup: !/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(used) || /lite/.test(used), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: [...(res.log || []), ...(retryLog || [])] };
   return json(data);
 }
 
