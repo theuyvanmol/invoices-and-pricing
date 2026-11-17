@@ -1,8 +1,13 @@
 // Reads invoice photos/PDFs with Google Gemini and returns the supplier, date and every line item.
 import { json, fail, sql } from './_lib.js';
 
-// Reads invoices with Google Gemini (free tier). It never calls Anthropic, so it never uses Claude credit.
+// Reads invoices with Claude when an Anthropic API key is set (paid, fast), otherwise with the free Google Gemini readers.
 export const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+// Paid Claude reading (separate pay-as-you-go Anthropic API account, not a Claude subscription).
+// When ANTHROPIC_API_KEY is set, Claude reads first and the free Google readers are only a backup.
+export const AKEY = process.env.ANTHROPIC_API_KEY || '';
+const CLAUDE_FAST = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
+const CLAUDE_CAREFUL = process.env.CLAUDE_CAREFUL_MODEL || 'claude-sonnet-5-5';
 // Free models in order: the best readers first, the Lite ones last. Each has its own free daily allowance,
 // so when one is used up (or busy) the next one takes over.
 const ORDER = [...new Set([process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'].filter(Boolean))];
@@ -115,8 +120,55 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
   return Object.assign(last || { ok: false, status: 504, text: async () => '{}', clone() { return this; } }, { log });
 }
 
+// Reads with Claude. Returns a response shaped like Gemini's, so the rest of the code is the same.
+async function callClaude(parts, careful, timeout) {
+  const m = careful ? CLAUDE_CAREFUL : CLAUDE_FAST;
+  const started = Date.now();
+  const content = parts.map((p) => {
+    if (p.text) return { type: 'text', text: p.text };
+    const mt = p.inline_data.mime_type;
+    if (/pdf/i.test(mt)) return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: p.inline_data.data } };
+    return { type: 'image', source: { type: 'base64', media_type: /png|webp|gif/i.test(mt) ? mt : 'image/jpeg', data: p.inline_data.data } };
+  });
+  content.push({ type: 'text', text: 'Answer with the JSON object only.' });
+  const line = (x) => `${m}:${x}:${Math.round((Date.now() - started) / 1000)}s`;
+  try {
+    const signal = AbortSignal.timeout(timeout);
+    const send = (extra) => fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': AKEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: m, max_tokens: 16000, ...extra, messages: [{ role: 'user', content }] }),
+      signal,
+    });
+    let r = await send({ temperature: 0 });
+    let body = await r.text();
+    if (r.status === 400 && /temperature/i.test(body)) { r = await send({}); body = await r.text(); }
+    if (!r.ok) {
+      let why = ''; try { why = JSON.parse(body).error?.message || ''; } catch {}
+      return { ok: false, status: r.status, why, log: [line(r.status + (why ? ' ' + why.slice(0, 80) : ''))] };
+    }
+    const j = JSON.parse(body);
+    const text = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    const out = { candidates: [{ content: { parts: [{ text }] } }] };
+    return { ok: true, status: 200, model: m, log: [line(200)], json: async () => out, text: async () => text, usage: j.usage };
+  } catch (e) {
+    return { ok: false, status: 504, why: 'timed out', log: [line('timeout')] };
+  }
+}
+// Claude first when it is set up, then the free Google readers.
+async function callAI(parts, only, think, budget, careful) {
+  if (AKEY && !only) {
+    const c = await callClaude(parts, careful, Math.min(careful ? 50000 : 60000, budget - 5000));
+    if (c.ok) return c;
+    if (!KEY) return Object.assign(c, { text: async () => JSON.stringify({ error: { message: c.why || 'Claude could not read it' } }) });
+    const g = await callGemini(parts, null, think, Math.max(20000, budget - 60000));
+    return Object.assign(g, { log: [...c.log, ...(g.log || [])] });
+  }
+  return callGemini(parts, only, think, budget);
+}
+
 export async function readInvoice(photos, testModel) {
-  if (!KEY) return fail('Automatic reading is not switched on yet (no Gemini key). Enter the invoice by hand for now.', 503, { code: 'NO_AI' });
+  if (!KEY && !AKEY) return fail('Automatic reading is not switched on yet (no reading key). Enter the invoice by hand for now.', 503, { code: 'NO_AI' });
   const urls = (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(String(u))).slice(0, 5);
   if (!urls.length) return fail('Add a photo of the invoice first.');
 
@@ -163,7 +215,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
 
   const images = await imagesP;
   if (!images) return fail('A photo could not be loaded. Take it again.', 422);
-  const res = await callGemini([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000);
+  const res = await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000);
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
@@ -186,9 +238,9 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   fixLines(data);
   let usedModel = null, retryLog = null;
   let issue = checkTotals(data);
-  if (issue && Date.now() - t0 < 30000) {
+  if (issue && Date.now() - t0 < (AKEY ? 50000 : 30000)) {
     // One careful second look (only when there is time left before the 120 s limit), telling the reader exactly what does not add up.
-    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'low', 35000);
+    const retry = await callAI([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'low', 55000, true);
     retryLog = retry.log;
     if (retry.ok) {
       try {
@@ -200,7 +252,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     }
   }
   const used = usedModel || res.model || model;
-  data.reader = { model: used, backup: !/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(used) || /lite/.test(used), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: [...(res.log || []), ...(retryLog || [])] };
+  data.reader = { model: used, backup: !/^claude-/.test(used) && (!/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(used) || /lite/.test(used)), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: [...(res.log || []), ...(retryLog || [])] };
   return json(data);
 }
 
