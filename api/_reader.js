@@ -167,6 +167,33 @@ async function callAI(parts, only, think, budget, careful) {
   return callGemini(parts, only, think, budget);
 }
 
+const parseJson = (t) => { try { return JSON.parse(t); } catch { const m = String(t).match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } } };
+async function readPages(images, prompt) {
+  const n = images.length;
+  const runs = await Promise.all(images.map((img, i) => callClaude([img, { text: prompt + `
+
+IMPORTANT: you are given only page ${i + 1} of ${n} of this invoice; the other pages are read separately.
+- List only the product lines printed on this page, in order.
+- Fill supplier, invoiceNumber and date if they are printed on this page, otherwise leave them out.
+- Fill sections (with their subtotal), subtotalExVat and invoiceTotal only if they are printed on this page.
+- Lines at the top of this page that continue a section from the previous page belong to that section: use its name as category if it is shown (e.g. a "/CONT" heading); otherwise leave category out.
+- Do not set incomplete just because other pages are missing.` }], false, 60000)));
+  if (runs.some((r) => !r.ok)) return null; // fall back to one read of all pages
+  const pages = await Promise.all(runs.map(async (r) => parseJson(await r.text())));
+  if (pages.some((d) => !d)) return null;
+  const first = (k) => pages.map((d) => d[k]).find((v) => v !== undefined && v !== null && v !== '' && v !== 0);
+  const lastNum = (k) => [...pages].reverse().map((d) => Number(d[k]) || 0).find((v) => v > 0) || 0;
+  const lines = [];
+  let cat = '';
+  for (const d of pages) for (const l of d.lines || []) { if (l.category) cat = l.category; else if (cat) l.category = cat; lines.push(l); }
+  const secs = {};
+  for (const d of pages) for (const sct of d.sections || []) { const k = String(sct.name || '').toLowerCase(); if (!k) continue; if (!secs[k] || Number(sct.subtotal) > 0) secs[k] = sct; }
+  const data = { supplier: first('supplier'), invoiceNumber: first('invoiceNumber'), date: first('date'), lines, sections: Object.values(secs), subtotalExVat: lastNum('subtotalExVat'), invoiceTotal: lastNum('invoiceTotal') };
+  if (pages.every((d) => d.readable === false)) Object.assign(data, { readable: false, problem: pages[0].problem });
+  const out = { candidates: [{ content: { parts: [{ text: JSON.stringify(data) }] } }] };
+  return { ok: true, status: 200, model: runs[0].model, log: runs.flatMap((r, i) => r.log.map((x) => `p${i + 1} ${x}`)), json: async () => out, text: async () => JSON.stringify(data) };
+}
+
 export async function readInvoice(photos, testModel) {
   if (!KEY && !AKEY) return fail('Automatic reading is not switched on yet (no reading key). Enter the invoice by hand for now.', 503, { code: 'NO_AI' });
   const urls = (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(String(u))).slice(0, 5);
@@ -215,7 +242,9 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
 
   const images = await imagesP;
   if (!images) return fail('A photo could not be loaded. Take it again.', 422);
-  const res = await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000);
+  // Several pages with Claude: read every page at the same time and join them (a 5-page invoice takes as long as one page).
+  const split = AKEY && images.length > 1 && !testModel ? await readPages(images, prompt) : null;
+  const res = split || await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000);
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
@@ -238,7 +267,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   fixLines(data);
   let usedModel = null, retryLog = null;
   let issue = checkTotals(data);
-  if (issue && Date.now() - t0 < (AKEY ? 50000 : 30000)) {
+  if (issue && !split && Date.now() - t0 < (AKEY ? 50000 : 30000)) {
     // One careful second look (only when there is time left before the 120 s limit), telling the reader exactly what does not add up.
     const retry = await callAI([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'low', 55000, true);
     retryLog = retry.log;
