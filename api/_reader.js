@@ -53,8 +53,9 @@ async function coolDown(m, status, body) {
   try { await sql`update settings set data = jsonb_set(data, '{aiCool}', ${JSON.stringify(cool)}::jsonb, true) where id = 1`; } catch {}
 }
 export const coolingNow = async () => Object.fromEntries(Object.entries(await loadCool()).filter(([, t]) => t > Date.now()).map(([m, t]) => [m, new Date(t).toISOString()]));
-async function callGemini(parts, only, think = 'low', budget = 60000, rot = 0) {
-  const bodyFor = (m) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'minimal' ? 0 : think === 'low' ? 512 : 4096 } } : {}) : {}) } });
+async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0) {
+  // Lite models misread long invoices with no thinking, so they always think a little.
+  const bodyFor = (m, think = /lite/.test(m) && think0 === 'minimal' ? 'low' : think0) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'minimal' ? 0 : think === 'low' ? 512 : 4096 } } : {}) : {}) } });
   const started = Date.now();
   const tried = new Set();
   await loadCool();
@@ -270,7 +271,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   fixLines(data);
   let usedModel = null, retryLog = null;
   let issue = checkTotals(data);
-  if (issue && !split && Date.now() - t0 < (AKEY ? 50000 : 30000)) {
+  if (issue && (!split || !AKEY) && Date.now() - t0 < (AKEY ? 50000 : 30000)) {
     // One careful second look (only when there is time left before the 120 s limit), telling the reader exactly what does not add up.
     const retry = await callAI([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'low', 55000, true);
     retryLog = retry.log;
