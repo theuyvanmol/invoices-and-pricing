@@ -781,10 +781,11 @@ async function impRun(){
       if(!S.sup.some(x=>x.name===saved.supplier))await load();
     }catch(e){
       if(e.code==='DUP'){it.status='skipped';it.msg='Already saved (same supplier and invoice number)'}
+      else if(e.code==='AI_LIMIT'){it.status='waiting';IMP.note='Today\'s free reading allowance is used up on every reader. It starts again at 8am UK time: open Import many, choose the same files and press Start. Finished files are skipped.';break}
       else if(/limit|busy/i.test(e.message)||e.status===503){
         it.status='waiting';limitHits++;
         if(limitHits>=4){IMP.note='Google\'s free reading limit seems to be used up for today. Come back tomorrow, open Import many, choose the same folder and press Start. Finished files are skipped.';break}
-        IMP.note=`Google is busy or the per-minute limit was reached. Waiting a minute, then carrying on (try ${limitHits} of 3).`;schedule();await sleep(65000);IMP.note='';
+        IMP.note=`All readers are busy right now. Waiting a minute, then carrying on (try ${limitHits} of 3).`;schedule();await sleep(65000);IMP.note='';
       }
       else if(e.offline){it.status='waiting';IMP.note='No internet connection. Import paused. Press Start when you are back online.';break}
       else{it.status='failed';it.msg=e.message}
@@ -820,7 +821,7 @@ function vImport(){
       ${IMP.note?`<p class="notice" style="margin-top:10px">${esc(IMP.note)}</p>`:''}</li>
     <li class="${total&&!c.check&&!c.failed&&doneN===total?'done':''}"><b>Check the ones marked “Needs checking”</b><span>An invoice that does not add up, or is missing a date or supplier, is not saved. Tap <b>Check</b>, fix it against the photo and save. ${c.check+c.failed?`<b style="color:var(--warn)">${c.check+c.failed} waiting now.</b>`:''}</span></li>
   </ol>
-  <p class="small muted" style="margin-top:12px">Old invoices fill in each product's price history. They only create price alerts when they are from the last 14 days. Google's free plan reads a limited number per day; if the limit is reached, the import pauses and you continue the next day with the same files.</p></div></section>`;
+  <p class="small muted" style="margin-top:12px">Old invoices fill in each product's price history. They only create price alerts when they are from the last 14 days. Each free reader has its own daily allowance and the app moves to the next one by itself. When all are used up, the import pauses; continue after 8am UK time with the same files.</p></div></section>`;
   if(total)h+=`<div class="chips">${[['all',`All ${total}`],['waiting',`Waiting ${c.waiting+c.reading}`],['saved',`Saved ${c.saved}`],['check',`Needs checking ${c.check}`],['skipped',`Skipped ${c.skipped}`],['failed',`Failed ${c.failed}`]].map(([k,l])=>`<button class="chip ${IMP.filter===k?'on':''}" data-impf="${k}">${l}</button>`).join('')}</div>`;
   const listHtml=(()=>{if(!total)return '';
     const list=IMP.items.filter(x=>IMP.filter==='all'||x.status===IMP.filter||(IMP.filter==='waiting'&&x.status==='reading'));
@@ -1188,7 +1189,7 @@ async function readInvoice(){
       lines:r.lines.map(fromRead).map(l=>({...l,qty:l.qty||'1'})).filter(l=>l.name),incomplete:!!r.incomplete,sections:r.sections||[]};
     if(r.incomplete)scan.error='This looks like only part of a longer invoice. Use “Add page and read again” to add the other page(s).';
     else if(r.reader?.issue)scan.error='Some lines may be wrong: '+r.reader.issue.replace('quantity × unitPrice does not equal lineTotal for','quantity × price does not match the invoice for')+'. Check the highlighted lines against the photo.';
-    else if(r.reader?.backup)scan.error='Read with the backup reader because today’s free limit on the main reader was used up. Check each line carefully.';
+    else if(r.reader?.backup)scan.error='Read with a backup reader (the better ones have used today’s free allowance). Check each line carefully against the photo.';
     scan.step='review';lastView=null;render();
   }catch(e){
     if(myRun.cancelled)return;

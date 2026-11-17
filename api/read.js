@@ -1,6 +1,6 @@
 // Reads invoice photos with Google Gemini (free). Never calls Anthropic.
 import { route, json } from './_lib.js';
-import { readInvoice, listModels, KEY, currentModel } from './_reader.js';
+import { readInvoice, listModels, KEY, currentModel, coolingNow } from './_reader.js';
 
 export const POST = route(async (request) => {
   const { photos, model } = await request.json().catch(() => ({}));
@@ -8,4 +8,4 @@ export const POST = route(async (request) => {
 });
 
 // Lists which free Gemini models this key can use (names only), to help diagnose reading problems.
-export const GET = route(async () => json({ preferred: currentModel(), models: KEY ? await listModels() : [] }));
+export const GET = route(async () => json({ preferred: currentModel(), usedUpUntil: await coolingNow(), models: KEY ? await listModels() : [] }));

@@ -3,9 +3,10 @@ import { json, fail, sql } from './_lib.js';
 
 // Reads invoices with Google Gemini (free tier). It never calls Anthropic, so it never uses Claude credit.
 export const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
-export let model = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-// Tested backups, used when the main model is busy. Others found on the account are tried after these.
-const BACKUPS = ['gemini-3.6-flash', 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite'];
+// Free models in order: the best readers first, the Lite ones last. Each has its own free daily allowance,
+// so when one is used up (or busy) the next one takes over.
+const ORDER = [...new Set([process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'].filter(Boolean))];
+export let model = ORDER[0];
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 
 // All free Flash models this key can use, best first (full Flash before Lite, newest first).
@@ -22,12 +23,39 @@ export async function listModels() {
 // Tries the preferred model, then other free Flash models when Google is busy (503), rate-limited (429) or the model is gone (404).
 // Thinking is what makes Gemini slow. A first read uses little; the careful second look (totals did not add up) uses more.
 const noThink = new Set();
+// Models that said "limit reached" are skipped until their limit resets, so no time is wasted asking them again.
+// Kept in the database so every server copy knows. Google's daily limits reset at midnight Pacific time (8am UK).
+let cool = null;
+function nextPacificMidnight() {
+  const now = new Date(), pt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+  const m = new Date(pt); m.setHours(24, 0, 0, 0);
+  return m.getTime() + (now - pt);
+}
+async function loadCool() {
+  if (cool) return cool;
+  try { cool = (await sql`select data->'aiCool' as c from settings where id = 1`)[0]?.c || {}; } catch { cool = {}; }
+  return cool;
+}
+async function coolDown(m, status, body) {
+  let until;
+  if (status === 404) until = Date.now() + 24 * 3600e3;
+  else if (/PerDay/i.test(body)) until = nextPacificMidnight();
+  else { const d = Number((body.match(/"retryDelay":\s*"(\d+)/) || [])[1]); until = Date.now() + Math.min(120, Math.max(20, d || 60)) * 1000; }
+  cool = { ...(cool || {}), [m]: until };
+  for (const k of Object.keys(cool)) if (cool[k] < Date.now()) delete cool[k];
+  try { await sql`update settings set data = jsonb_set(data, '{aiCool}', ${JSON.stringify(cool)}::jsonb, true) where id = 1`; } catch {}
+}
+export const coolingNow = async () => Object.fromEntries(Object.entries(await loadCool()).filter(([, t]) => t > Date.now()).map(([m, t]) => [m, new Date(t).toISOString()]));
 async function callGemini(parts, only, think = 'low', budget = 60000) {
   const bodyFor = (m) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'low' ? 512 : 4096 } } : {}) : {}) } });
   const started = Date.now();
   const tried = new Set();
-  let queue = only ? [only] : [model, ...BACKUPS], listed = !!only, last = null;
+  await loadCool();
+  const ok = (m) => only || !(cool[m] > Date.now());
+  let queue = only ? [only] : ORDER.filter(ok), listed = !!only, last = null;
   callGemini.log = [];
+  if (!queue.length) { listed = true; queue = (await listModels()).filter(ok); }
+  if (!queue.length) { callGemini.log.push('all-used-up'); return { ok: false, status: 429, allUsed: true, text: async () => '{"error":{"message":"All free readers used up today"}}', clone() { return this; } }; }
   while (queue.length && Date.now() - started < budget - 4000) {
     const m = queue.shift();
     if (tried.has(m)) continue;
@@ -42,10 +70,11 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
       if (last.ok) { model = m; return last; }
       if (last.status === 400 && !noThink.has(m)) { const t = await last.clone().text(); if (/thinking/i.test(t)) { noThink.add(m); attempt--; continue; } }
       if (last.status === 503 && attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+      if ((last.status === 429 || last.status === 404) && !only) await coolDown(m, last.status, await last.clone().text().catch(() => ''));
       break;
     }
     if (![404, 429, 500, 503, 504].includes(last.status)) return last;
-    if (!listed) { listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x)).slice(0, 4)); }
+    if (!listed) { listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x) && ok(x)).slice(0, 4)); }
   }
   return last;
 }
@@ -102,6 +131,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     console.error('Gemini error', res.status, t.slice(0, 500));
     if (res.status === 400 && /API key/i.test(t)) return fail('The Gemini key is not valid. Check GEMINI_API_KEY in the Vercel project settings.', 502);
     if (res.status === 403) return fail('The Gemini key is not allowed to use this service. Check it in Google AI Studio.', 502);
+    if (res.allUsed || (res.status === 429 && (callGemini.log || []).length > 2)) return fail('Today\'s free reading allowance is used up on every reader. It starts again at 8am UK time. Enter this invoice by hand for now, or switch on paid reading for no daily limit.', 429, { code: 'AI_LIMIT' });
     if (res.status === 429) return fail('The free reading limit was reached for now. Wait a minute and try again, or enter it by hand.', 503);
     let why = '';
     try { why = JSON.parse(t).error?.message || ''; } catch {}
