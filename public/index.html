@@ -1191,6 +1191,7 @@ async function readInvoice(){
     else if(r.reader?.issue)scan.error='Some lines may be wrong: '+r.reader.issue.replace('quantity × unitPrice does not equal lineTotal for','quantity × price does not match the invoice for')+'. Check the highlighted lines against the photo.';
     else if(r.reader?.backup)scan.error='Read with a backup reader (the better ones have used today’s free allowance). Check each line carefully against the photo.';
     scan.step='review';lastView=null;render();
+    if(r.reader?.secs)toast(`Read in ${Math.round((Date.now()-t0)/1000)} s (${String(r.reader.model||'').replace('gemini-','Gemini ').replace(/-/g,' ')})`);
   }catch(e){
     if(myRun.cancelled)return;
     clearInterval(tick);

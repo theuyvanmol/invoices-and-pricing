@@ -56,25 +56,59 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
   callGemini.log = [];
   if (!queue.length) { listed = true; queue = (await listModels()).filter(ok); }
   if (!queue.length) { callGemini.log.push('all-used-up'); return { ok: false, status: 429, allUsed: true, text: async () => '{"error":{"message":"All free readers used up today"}}', clone() { return this; } }; }
-  while (queue.length && Date.now() - started < budget - 4000) {
-    const m = queue.shift();
-    if (tried.has(m)) continue;
-    tried.add(m);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const left = budget - (Date.now() - started);
-      if (left < 6000) break;
-      try {
-        last = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: bodyFor(m), signal: AbortSignal.timeout(Math.min(40000, left - 2000)) });
-      } catch (e) { callGemini.log.push(`${m}:timeout:${Math.round((Date.now() - started) / 1000)}s`); last = { ok: false, status: 504, text: async () => JSON.stringify({ error: { message: 'Timed out' } }) }; break; }
-      callGemini.log.push(`${m}:${last.status}:${Math.round((Date.now() - started) / 1000)}s`);
-      if (last.ok) { model = m; return last; }
-      if (last.status === 400 && !noThink.has(m)) { const t = await last.clone().text(); if (/thinking/i.test(t)) { noThink.add(m); attempt--; continue; } }
-      if (last.status === 503 && attempt === 0) { await new Promise((r) => setTimeout(r, 1500)); continue; }
-      if ((last.status === 429 || last.status === 404) && !only) await coolDown(m, last.status, await last.clone().text().catch(() => ''));
-      break;
+  const sec = () => Math.round((Date.now() - started) / 1000);
+  // One request to one model. Retries once when Google is briefly busy; remembers used-up models.
+  const attempt = (m) => {
+    const ctl = new AbortController();
+    const p = (async () => {
+      for (let a = 0; a < 2; a++) {
+        const left = budget - (Date.now() - started);
+        if (left < 5000) break;
+        let r;
+        const timer = setTimeout(() => ctl.abort(), Math.min(45000, left - 2000));
+        try { r = await fetch(`${API}/models/${m}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: bodyFor(m), signal: ctl.signal }); }
+        catch { clearTimeout(timer); callGemini.log.push(`${m}:stopped:${sec()}s`); return { ok: false, status: 504, m, text: async () => '{"error":{"message":"Timed out"}}', clone() { return this; } }; }
+        clearTimeout(timer);
+        r.m = m;
+        callGemini.log.push(`${m}:${r.status}:${sec()}s`);
+        if (r.ok) return r;
+        const t = await r.clone().text().catch(() => '');
+        if (r.status === 400 && !noThink.has(m) && /thinking/i.test(t)) { noThink.add(m); a--; continue; }
+        if (r.status === 503 && a === 0) { await new Promise((z) => setTimeout(z, 1500)); continue; }
+        if ((r.status === 429 || r.status === 404) && !only) await coolDown(m, r.status, t);
+        return r;
+      }
+      return { ok: false, status: 504, m, text: async () => '{"error":{"message":"Out of time"}}', clone() { return this; } };
+    })();
+    return { p, ctl };
+  };
+  const firstOk = (runs) => new Promise((res) => {
+    let left = runs.length, lastR = null;
+    runs.forEach((x) => x.p.then((r) => { if (r.ok) { runs.forEach((y) => y !== x && y.ctl.abort()); res(r); } else { lastR = r; if (--left === 0) res(lastR); } }));
+  });
+  const next = async () => {
+    while (true) {
+      const m = queue.shift();
+      if (m) { if (tried.has(m) || !ok(m)) continue; tried.add(m); return m; }
+      if (listed) return null;
+      listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x) && ok(x)).slice(0, 4));
     }
-    if (![404, 429, 500, 503, 504].includes(last.status)) return last;
-    if (!listed) { listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x) && ok(x)).slice(0, 4)); }
+  };
+  // If a model has not answered after 25 s, ask the next one as well and take whichever answers first.
+  const HEDGE = 25000;
+  let m = await next();
+  while (m && Date.now() - started < budget - 4000) {
+    const a = attempt(m);
+    let r = await Promise.race([a.p, new Promise((z) => setTimeout(() => z(null), HEDGE))]);
+    if (r === null) {
+      const m2 = !only && budget - (Date.now() - started) > 15000 ? await next() : null;
+      if (m2) { callGemini.log.push(`slow, also asking ${m2}:${sec()}s`); r = await firstOk([a, attempt(m2)]); }
+      else r = await a.p;
+    }
+    last = r;
+    if (r.ok) { model = r.m; return r; }
+    if (![404, 429, 500, 503, 504].includes(r.status)) return r;
+    m = await next();
   }
   return last;
 }
@@ -96,7 +130,9 @@ export async function readInvoice(photos, testModel) {
   ]);
   const prompt = `These ${urls.length} photo(s) are the pages, in order, of ONE supplier invoice or delivery note for a restaurant.
 Extract every purchased line item. Reply with ONLY a JSON object, no other text:
-{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","category":"Chilled","packSize":"1 x 2.5kg","pieces":null,"quantity":1,"unit":"pack 2.5kg","unitPrice":13.45,"lineTotal":13.45,"vatRate":0,"promo":false,"regularPrice":null,"note":"","other":false}],"sections":[{"name":"Chilled","subtotal":20.63}],"subtotalExVat":0,"invoiceTotal":0,"incomplete":false,"readable":true,"problem":""}
+{"supplier":"Supplier company name","invoiceNumber":"string","date":"YYYY-MM-DD","lines":[{"name":"product name","category":"Chilled","packSize":"1 x 2.5kg","quantity":1,"unit":"pack 2.5kg","unitPrice":13.45,"lineTotal":13.45,"vatRate":0}],"sections":[{"name":"Chilled","subtotal":20.63}],"subtotalExVat":0,"invoiceTotal":0}
+Possible extra fields on a line, only when they apply: "pieces", "promo":true, "regularPrice", "note", "other":true. Extra top-level fields only when they apply: "incomplete":true, "readable":false with "problem".
+Keep the answer short: leave out any field that would be null, false, 0 or empty.
 Rules:
 - quantity × unitPrice must equal lineTotal, exactly as the invoice charges it. unitPrice is the price for ONE unit, before VAT/tax when both are shown. Never return the line total as unitPrice.
 - Weighed items are ONLY lines priced per kg, where weight × price = value (e.g. meat: Qty 2, Unit 3.44kg, Price 9.50, Value 32.68 → pieces = 2, quantity = 3.44, unit = "kg", unitPrice = 9.50). A pack size such as "1 2.5kg", "4 2.5kg" or "1 1ltr" is NOT a weight to multiply: then quantity is the number of packs (QTY column), unit is the pack (e.g. "pack 2.5kg", "case 4x2.5kg") and pieces is null.
@@ -148,9 +184,9 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   fixLines(data);
   const firstModel = model;
   let issue = checkTotals(data);
-  if (issue && Date.now() - t0 < 60000) {
+  if (issue && Date.now() - t0 < 30000) {
     // One careful second look (only when there is time left before the 120 s limit), telling the reader exactly what does not add up.
-    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'medium', Math.max(15000, 105000 - (Date.now() - t0)));
+    const retry = await callGemini([...images, { text: prompt }, { text: `Your previous answer was:\n${JSON.stringify(data)}\nProblem: ${issue}\nLook at the photo again line by line (quantity, price and value columns) and return the corrected JSON only.` }], null, 'low', 35000);
     if (retry.ok) {
       try {
         const t2 = ((await retry.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
