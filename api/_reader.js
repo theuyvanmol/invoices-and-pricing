@@ -5,7 +5,8 @@ import { json, fail, sql } from './_lib.js';
 export const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 // Paid Claude reading (separate pay-as-you-go Anthropic API account, not a Claude subscription).
 // When ANTHROPIC_API_KEY is set, Claude reads first and the free Google readers are only a backup.
-export const AKEY = process.env.ANTHROPIC_API_KEY || '';
+// Claude reading is switched off: it is only used if READER=claude is set in Vercel as well as the key.
+export const AKEY = process.env.READER === 'claude' ? process.env.ANTHROPIC_API_KEY || '' : '';
 const CLAUDE_FAST = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const CLAUDE_CAREFUL = process.env.CLAUDE_CAREFUL_MODEL || 'claude-sonnet-5-5';
 // Free models in order: the best readers first, the Lite ones last. Each has its own free daily allowance,
@@ -52,13 +53,14 @@ async function coolDown(m, status, body) {
   try { await sql`update settings set data = jsonb_set(data, '{aiCool}', ${JSON.stringify(cool)}::jsonb, true) where id = 1`; } catch {}
 }
 export const coolingNow = async () => Object.fromEntries(Object.entries(await loadCool()).filter(([, t]) => t > Date.now()).map(([m, t]) => [m, new Date(t).toISOString()]));
-async function callGemini(parts, only, think = 'low', budget = 60000) {
-  const bodyFor = (m) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'low' ? 512 : 4096 } } : {}) : {}) } });
+async function callGemini(parts, only, think = 'low', budget = 60000, rot = 0) {
+  const bodyFor = (m) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'minimal' ? 0 : think === 'low' ? 512 : 4096 } } : {}) : {}) } });
   const started = Date.now();
   const tried = new Set();
   await loadCool();
   const ok = (m) => only || !(cool[m] > Date.now());
   let queue = only ? [only] : ORDER.filter(ok), listed = !!only, last = null;
+  if (rot && queue.length) { const good = queue.filter((x) => !/lite/.test(x)), lite = queue.filter((x) => /lite/.test(x)); const k = good.length ? rot % good.length : 0; queue = [...good.slice(k), ...good.slice(0, k), ...lite]; }
   const log = [];
   callGemini.log = log;
   if (!queue.length) { listed = true; queue = (await listModels()).filter(ok); }
@@ -101,8 +103,8 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
       listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x) && ok(x)).slice(0, 4));
     }
   };
-  // If a model has not answered after 15 s, ask the next one as well and take whichever answers first.
-  const HEDGE = 15000;
+  // If a model has not answered after 10 s, ask the next one as well and take whichever answers first.
+  const HEDGE = 10000;
   let m = await next();
   while (m && Date.now() - started < budget - 4000) {
     const a = attempt(m);
@@ -168,18 +170,19 @@ async function callAI(parts, only, think, budget, careful) {
 }
 
 const parseJson = (t) => { try { return JSON.parse(t); } catch { const m = String(t).match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } } };
-async function readPages(images, prompt) {
+async function readPages(images, prompt, google) {
   const n = images.length;
-  const runs = await Promise.all(images.map((img, i) => callClaude([img, { text: prompt + `
+  const pageNote = (i) => `
 
 IMPORTANT: you are given only page ${i + 1} of ${n} of this invoice; the other pages are read separately.
 - List only the product lines printed on this page, in order.
 - Fill supplier, invoiceNumber and date if they are printed on this page, otherwise leave them out.
 - Fill sections (with their subtotal), subtotalExVat and invoiceTotal only if they are printed on this page.
 - Lines at the top of this page that continue a section from the previous page belong to that section: use its name as category if it is shown (e.g. a "/CONT" heading); otherwise leave category out.
-- Do not set incomplete just because other pages are missing.` }], false, 60000)));
+- Do not set incomplete just because other pages are missing.`;
+  const runs = await Promise.all(images.map((img, i) => google ? callGemini([img, { text: prompt + pageNote(i) }], null, 'minimal', 80000, i) : callClaude([img, { text: prompt + pageNote(i) }], false, 60000)));
   if (runs.some((r) => !r.ok)) return null; // fall back to one read of all pages
-  const pages = await Promise.all(runs.map(async (r) => parseJson(await r.text())));
+  const pages = await Promise.all(runs.map(async (r) => { try { return parseJson(((await r.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n')); } catch { return null; } }));
   if (pages.some((d) => !d)) return null;
   const first = (k) => pages.map((d) => d[k]).find((v) => v !== undefined && v !== null && v !== '' && v !== 0);
   const lastNum = (k) => [...pages].reverse().map((d) => Number(d[k]) || 0).find((v) => v > 0) || 0;
@@ -191,7 +194,7 @@ IMPORTANT: you are given only page ${i + 1} of ${n} of this invoice; the other p
   const data = { supplier: first('supplier'), invoiceNumber: first('invoiceNumber'), date: first('date'), lines, sections: Object.values(secs), subtotalExVat: lastNum('subtotalExVat'), invoiceTotal: lastNum('invoiceTotal') };
   if (pages.every((d) => d.readable === false)) Object.assign(data, { readable: false, problem: pages[0].problem });
   const out = { candidates: [{ content: { parts: [{ text: JSON.stringify(data) }] } }] };
-  return { ok: true, status: 200, model: runs[0].model, log: runs.flatMap((r, i) => r.log.map((x) => `p${i + 1} ${x}`)), json: async () => out, text: async () => JSON.stringify(data) };
+  return { ok: true, status: 200, model: runs.map((r) => r.model).find((m) => !/lite/.test(m || '')) || runs[0].model, log: runs.flatMap((r, i) => (r.log || []).map((x) => `p${i + 1} ${x}`)), json: async () => out, text: async () => JSON.stringify(data) };
 }
 
 export async function readInvoice(photos, testModel) {
@@ -243,8 +246,8 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   const images = await imagesP;
   if (!images) return fail('A photo could not be loaded. Take it again.', 422);
   // Several pages with Claude: read every page at the same time and join them (a 5-page invoice takes as long as one page).
-  const split = AKEY && images.length > 1 && !testModel ? await readPages(images, prompt) : null;
-  const res = split || await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000);
+  const split = images.length > 1 && !testModel ? await readPages(images, prompt, !AKEY) : null;
+  const res = split || await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, AKEY ? 'low' : 'minimal', 100000);
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
