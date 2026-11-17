@@ -431,7 +431,7 @@ const I={
  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>'
 };
 const VIEWS={home:'Overview',suppliers:'Suppliers & prices',supplier:'Supplier',compare:'Compare suppliers',scan:'Add invoice',alerts:'Price alerts',invoices:'Invoices',import:'Import many invoices',settings:'Settings'};
-const SUBS={home:'Everything you are paying, updated from every invoice.',suppliers:'Tap a supplier to see its products and prices, its invoices and its price rises.',compare:'Type a product to see what every supplier charges for it, cheapest first.',scan:'Take a photo, upload a photo or PDF, or type it in. You check everything before it is saved.',alerts:'Every rise in a price per unit, found on your invoices.',invoices:'All invoices, grouped by supplier.',import:'Bring in a lot of invoices at once, from this device or a Google Drive folder.',settings:'Alert rules, email and logins.'};
+const SUBS={home:'Everything you are paying, updated from every invoice.',suppliers:'Tap a supplier to see its products and prices, its invoices and its price rises.',compare:'Type a product to see what every supplier charges for it, cheapest first.',scan:'Take a photo and tap “Done, scan next”. It reads in the background while you carry on with the next invoice.',alerts:'Every rise in a price per unit, found on your invoices.',invoices:'All invoices, grouped by supplier.',import:'Bring in a lot of invoices at once, from this device or a Google Drive folder.',settings:'Alert rules, email and logins.'};
 
 /* ---------- state ---------- */
 const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'Geisha Restaurant',alertEmail:'',pinsEnabled:false},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
@@ -476,7 +476,7 @@ async function api(path,opts={}){
 /* A new version was deployed: reload open pages so nobody keeps using an old copy. */
 let APPV=null,newVer=false;
 function checkVersion(v){if(!v)return;if(!APPV){APPV=v;return}if(v!==APPV&&!newVer){newVer=true;updateApp()}}
-function busyNow(){return scan.step==='review'||IMP.running||DRV.busy||!!document.querySelector('#main input:focus,#main textarea:focus,#main select:focus')}
+function busyNow(){return SQ.running>0||SQ.items.some(x=>x.status==='uploading')||scan.step==='review'||IMP.running||DRV.busy||!!document.querySelector('#main input:focus,#main textarea:focus,#main select:focus')}
 function updateApp(){
   if(!busyNow()){location.reload();return}
   if($('#newver'))return;
@@ -492,6 +492,7 @@ async function load(){
     const d=await api('/api/data');
     S.sup=d.suppliers;S.prod=d.products;S.inv=d.invoices;S.alerts=d.alerts;S.settings={...S.settings,...d.settings};S.role=d.role;
     S.loaded.prod=true;S.err=null;S.slow=false;
+    if(!SQ.running&&SQ.items.some(x=>x.status==='waiting'))sqRun();
   }catch(e){if(e.status!==401)S.err=e.message}
   finally{loading=false;schedule()}
 }
@@ -552,7 +553,7 @@ function renderNav(){
   const v=view(),n=openAlerts().length,on=k=>v===k||(k==='suppliers'&&v==='supplier');
   $('#sideNav').innerHTML=NAV.map(k=>`<button class="navbtn ${on(k)?'on':''}" data-go="${k}">${I[k]}${k==='import'?'Import many':VIEWS[k]}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
   const tabs=[['home','Home'],['suppliers','Suppliers'],['scan','Scan'],['alerts','Alerts'],['invoices','Invoices']];
-  $('#tabbar').innerHTML=tabs.map(([k,l])=>k==='scan'?`<button class="tab scan ${v===k?'on':''}" data-go="scan" aria-label="Scan invoice"><span class="fab">${I.scan}</span>${l}</button>`:`<button class="tab ${on(k)?'on':''}" data-go="${k}">${I[k]}${l}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
+  $('#tabbar').innerHTML=tabs.map(([k,l])=>k==='scan'?`<button class="tab scan ${v===k?'on':''}" data-go="scan" aria-label="Scan invoice"><span class="fab">${I.scan}</span>${l}${(sqCounts().check+sqCounts().failed)?`<span class="count">${sqCounts().check+sqCounts().failed}</span>`:''}</button>`:`<button class="tab ${on(k)?'on':''}" data-go="${k}">${I[k]}${l}${k==='alerts'&&n?`<span class="count">${n}</span>`:''}</button>`).join('');
   const role=isOwner()?'Owner':'Manager';
   $('#sideFoot').innerHTML=S.role&&S.loginMode==='open'?`${esc(S.settings.restaurant)}<br>${S.prod.length} products · ${S.inv.length} invoices`:S.role?`Signed in as <b>${role}</b> · <button class="btn ghost sm" data-act="signout" style="min-height:28px;padding:0 6px">Sign out</button><br>${S.prod.length} products · ${S.inv.length} invoices`:'';
   $('#sideRest').textContent=S.settings.restaurant||'Geisha Restaurant';
@@ -796,6 +797,58 @@ async function impRun(){
   load();render();
   const c=impCounts();if(!c.waiting&&!IMP.note)toast(`Import finished: ${c.saved} saved, ${c.check} to check.`);
 }
+/* ---------- scan queue: take the photo, carry on, it reads in the background ---------- */
+const SQ={items:[],running:0};
+try{SQ.items=(JSON.parse(localStorage.getItem('ip_scanq')||'[]')||[]).map(x=>({...x,status:x.status==='reading'||x.status==='uploading'?'waiting':x.status,photos:(x.photos||[]).filter(Boolean)}))}catch(e){}
+function sqStore(){try{localStorage.setItem('ip_scanq',JSON.stringify(SQ.items.filter(x=>x.status!=='uploading').slice(-60).map(({id,photos,status,msg,draft,at,savedId,pdf})=>({id,photos,status,msg,draft,at,savedId,pdf}))))}catch(e){}}
+function sqUpdate(){sqStore();if(view()==='scan'&&scan.step==='capture')schedule();else renderNav()}
+const sqCounts=()=>{const c={waiting:0,reading:0,saved:0,check:0,failed:0,skipped:0,uploading:0};SQ.items.forEach(x=>c[x.status]=(c[x.status]||0)+1);return c};
+function sqQueue(){
+  if(!scan.photos.length)return;
+  const ph=scan.photos;
+  const it={id:'q'+Date.now().toString(36),photos:[],status:'uploading',msg:'',at:Date.now(),pdf:ph.some(p=>p.pdf),thumb:ph[0]&&!ph[0].pdf?ph[0].url:''};
+  SQ.items.push(it);
+  scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};lastView=null;render();window.scrollTo({top:0});
+  toast('Sent. It reads in the background: scan the next one.');
+  Promise.all(ph.map(p=>p.remote||preUpload(p))).then(urls=>{it.photos=urls;it.status='waiting';sqUpdate();sqRun()}).catch(e=>{it.status='failed';it.msg='The photo could not be sent: '+e.message;it.local=ph;sqUpdate()});
+}
+async function sqRun(){
+  while(SQ.running<2){
+    const it=SQ.items.find(x=>x.status==='waiting');if(!it)return;
+    SQ.running++;it.status='reading';it.msg='';sqUpdate();
+    (async()=>{
+      try{
+        const r=await api('/api/read',{method:'POST',body:{photos:it.photos}});
+        const d=impDraft(r);it.draft=d;
+        const why=impProblem(r,d);
+        if(why){it.status='check';it.msg=why;return}
+        const saved=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines:d.lines.map(toSave),photos:it.photos,source:'ai'}});
+        it.status='saved';it.savedId=saved.id;it.msg=`${saved.supplier} · ${d.number?'No. '+d.number+' · ':''}${money(saved.total)}${saved.ups?` · ${saved.ups} price rise${saved.ups>1?'s':''}`:''}`;
+        load();
+      }catch(e){
+        if(e.code==='DUP'){it.status='skipped';it.msg='Already saved before (same supplier and invoice number)'}
+        else if(e.offline){it.status='waiting';it.msg='Waiting for internet…';setTimeout(sqRun,15000)}
+        else{it.status='failed';it.msg=e.message}
+      }finally{SQ.running--;sqUpdate();sqRun()}
+    })();
+  }
+}
+function sqCheck(id){
+  const it=SQ.items.find(x=>x.id===id);if(!it)return;
+  const draft=it.draft?{...it.draft,date:it.draft.date||todayISO(),lines:it.draft.lines.length?it.draft.lines:[{name:'',unit:'',qty:'1',price:''}]}:{supplierId:S.sup[0]?.id||'new',newSupplier:'',number:'',date:todayISO(),printedTotal:0,lines:[{name:'',unit:'',qty:'1',price:''}]};
+  scan={step:'review',photos:(it.photos||[]).map(u=>({url:u,remote:u,pdf:/\.pdf(\?|$)/i.test(u)})),draft,error:it.msg?'Why it needs checking: '+it.msg:'',result:null,source:it.draft?'ai':'manual',kind:'invoice',queueId:id};
+  lastView=null;render();window.scrollTo({top:0});
+}
+function sqPanel(){
+  if(!SQ.items.length)return '';
+  const c=sqCounts(),busy=c.waiting+c.reading+c.uploading;
+  const P={uploading:'<span class="pill new">Sending…</span>',waiting:'<span class="pill flat">Waiting</span>',reading:'<span class="pill new">Reading…</span>',saved:'<span class="pill down">Saved</span>',check:'<span class="pill warn">Check</span>',failed:'<span class="pill up">Not read</span>',skipped:'<span class="pill flat">Already saved</span>'};
+  const order={check:0,failed:1,reading:2,uploading:3,waiting:4,saved:5,skipped:6};
+  const list=[...SQ.items].sort((a,b)=>order[a.status]-order[b.status]||b.at-a.at);
+  return `<section class="panel" style="margin-top:16px"><div class="panel-h"><h2>Your scans</h2><span class="small muted">${busy?`${busy} reading`:''}${busy&&c.check?' · ':''}${c.check+c.failed?`<b style="color:var(--warn)">${c.check+c.failed} to check</b>`:''}</span></div>
+  <div class="rows">${list.map(x=>`<div class="improw"><span class="fn">${x.status==='saved'||x.draft?.newSupplier||x.draft?.supplierId?esc(x.status==='saved'?x.msg:((x.draft.newSupplier||supName(x.draft.supplierId))+(x.draft.number?' · No. '+x.draft.number:''))):`Scan from ${new Date(x.at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`}</span><span class="acts">${P[x.status]||''}${x.status==='check'||x.status==='failed'?`<button class="btn sm primary" data-sqcheck="${x.id}">Check & save</button>`:''}${x.status==='failed'&&x.photos?.length?`<button class="btn sm ghost" data-sqretry="${x.id}">Read again</button>`:''}${x.status==='saved'&&x.savedId?`<button class="btn sm ghost" data-invoice="${esc(x.savedId)}">View</button>`:''}</span>${x.msg&&x.status!=='saved'?`<span class="small muted" style="grid-column:1/-1">${esc(x.msg)}</span>`:''}</div>`).join('')}</div>
+  ${c.saved+c.skipped?'<div class="g-foot"><button class="btn sm ghost" data-act="sqClear">Clear saved ones from this list</button></div>':''}</section>`;
+}
 function impCounts(){const c={waiting:0,reading:0,saved:0,check:0,skipped:0,failed:0};IMP.items.forEach(x=>c[x.status]++);return c}
 function impCheck(key){
   const it=IMP.items.find(x=>x.key===key);if(!it)return;
@@ -1035,14 +1088,15 @@ function vScan(){
     h+=`<section class="panel"><div class="scan-hero">
       ${scan.photos.length?`<div class="thumbs">${scan.photos.map(thumb).join('')}${scan.photos.length<max?`<label class="addpage">+ Add page<input type="file" accept="${ACCEPT}" data-photo="1" aria-label="Add another page"></label>`:''}</div>
       <p class="small muted">Check every page is sharp and the prices are readable.</p>
-      <div class="savebar" style="justify-content:center;width:100%"><button class="btn" data-act="resetScan">Start over</button><button class="btn" data-act="manualKeep" ${ro?'disabled':''}>Type it in instead</button><button class="btn primary" data-act="read" ${ro?'disabled':''}>Read invoice →</button></div>`
+      <div class="savebar" style="justify-content:center;width:100%"><button class="btn" data-act="resetScan">Start over</button>${pl?`<button class="btn" data-act="manualKeep">Type it in instead</button><button class="btn primary" data-act="read">Read →</button>`:`<button class="btn" data-act="read">Read and check now</button><button class="btn primary" data-act="queue">Done, scan next →</button>`}</div>
+      ${pl?'':'<p class="small muted" style="text-align:center">“Done, scan next” reads it in the background. If the totals add up it saves by itself; if not, it waits below for you to check.</p>'}`
       :`<div class="choices">
         <label class="choice">${I.scan}<b>${pl?'Photo or PDF of price list':'Photo or PDF of invoice'}</b><span class="small muted">On a phone: take a photo. On a laptop: pick a photo or a PDF from email.</span><input type="file" accept="${ACCEPT}" multiple data-photo="1" aria-label="Take or choose a photo or PDF"></label>
         <button class="choice" data-act="manual" ${ro?'disabled':''}>${I.invoices}<b>${pl?'Type the prices in':'Type it in'}</b><span class="small muted">Enter the products and prices yourself, or paste rows from a spreadsheet.</span></button>
       </div>`}
       ${S.role&&S.features.ai===false?'<p class="notice">Automatic reading is not switched on yet. You can still add the photo and type the lines in.</p>':''}
       ${scan.photos.length||pl?'':`<button class="btn bigbtn" data-go="import" style="width:100%;max-width:760px">${I.import}Import many / Google Drive folder</button>`}
-    </div></section>`;
+    </div></section>`+(pl?'':sqPanel());
   }else if(st==='reading'){
     h+=`<section class="panel"><div class="result"><div class="spinner" aria-hidden="true"></div><h2>Reading the invoice…</h2><p class="muted" id="readStage">${esc(scan.stage||'Reading every product, quantity and price.')}</p><p class="mono small muted" id="readSecs"></p><button class="btn sm" data-act="cancelRead">Cancel</button></div></section>`;
   }else if(st==='review'||st==='saving'){
@@ -1259,7 +1313,8 @@ async function saveInvoice(){
     if(scan.photos.length){try{photos=await uploadPhotos()}catch(e){if(!confirmNoPhoto){scan.step='review';scan.error='The photo could not be uploaded ('+e.message+'). Tap Save again to save the invoice without its photo.';confirmNoPhoto=true;render();return}}}
     const r=await api('/api/invoices',{method:'POST',body:{supplierId:d.supplierId,newSupplier:d.newSupplier,number:d.number,date:d.date,printedTotal:d.printedTotal,lines,photos,historic:!!scan.importKey||!!scan.driveHistoric,sourceFile:scan.importKey||(scan.driveFileId?'drive:'+scan.driveFileId:undefined),driveFileId:scan.driveFileId||undefined,source:scan.kind==='pricelist'?'pricelist':scan.source,allowDuplicate:!!d.dupOk}});
     scan.photos.forEach(p=>URL.revokeObjectURL(p.url));confirmNoPhoto=false;
-    const ik=scan.importKey,dk=scan.driveFileId;
+    const ik=scan.importKey,dk=scan.driveFileId,qk=scan.queueId;
+    if(qk){const it=SQ.items.find(x=>x.id===qk);if(it){it.status='saved';it.savedId=r.id;it.msg=`${r.supplier} · ${money(r.total)}${r.ups?` · ${r.ups} price rise${r.ups>1?'s':''}`:''}`}scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};sqStore();toast('Saved.'+(sqCounts().check?' Next one to check is below.':''));render();load();return}
     if(dk){scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';toast('Saved.');load();drvLoad();return}
     scan={step:'done',photos:[],draft:null,error:'',source:'ai',result:{...r,kind:scan.kind}};
     if(ik){const it=IMP.items.find(x=>x.key===ik);if(it){it.status='saved';it.msg=`${r.supplier} · ${money(r.total)}`}scan={step:'capture',photos:[],draft:null,error:'',result:null,source:'ai'};location.hash='import';toast('Saved. Next one to check is below.');load();return}
@@ -1345,8 +1400,10 @@ function refreshCmp(){
 
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-stab],[data-editprice],[data-acctedit],[data-fixunit],[data-toggleline],[data-drvcheck],[data-drvretry],[data-drvignore],[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
+  const t=e.target.closest('[data-sqcheck],[data-sqretry],[data-stab],[data-editprice],[data-acctedit],[data-fixunit],[data-toggleline],[data-drvcheck],[data-drvretry],[data-drvignore],[data-impf],[data-impcheck],[data-impretry],[data-go],[data-product],[data-invoice],[data-supplier],[data-act],[data-pfilter],[data-afilter],[data-review],[data-reopen],[data-rmphoto],[data-rmline],[data-askdel],[data-del]');
   if(!t)return;
+  if(t.dataset.sqcheck){sqCheck(t.dataset.sqcheck);return}
+  if(t.dataset.sqretry){const it=SQ.items.find(x=>x.id===t.dataset.sqretry);if(it){it.status='waiting';it.msg='';sqUpdate();sqRun()}return}
   if(t.dataset.stab){UI.stab=t.dataset.stab;render();return}
   if(t.dataset.editprice){const [inv,pid]=t.dataset.editprice.split('|');UI.ep={inv,pid};UI.mp=null;showProduct(pid);setTimeout(()=>$('#epPrice')?.focus(),50);return}
   if(t.dataset.acctedit){UI.acct=(S.accounts||[]).find(u=>u.id===t.dataset.acctedit)||null;render();return}
@@ -1373,6 +1430,8 @@ document.addEventListener('click',async e=>{
   const a=t.dataset.act;
   if(a==='close')closeSheet();
   else if(a==='read')readInvoice();
+  else if(a==='queue')sqQueue();
+  else if(a==='sqClear'){SQ.items=SQ.items.filter(x=>x.status!=='saved'&&x.status!=='skipped');sqUpdate();render()}
   else if(a==='cancelRead'){if(readAbort)readAbort.cancelled=true;scan.step='capture';render()}
   else if(a==='manual')startManual();
   else if(a==='manualKeep'){const keep=scan.photos;startManual();scan.photos=keep;lastView=null;render()}

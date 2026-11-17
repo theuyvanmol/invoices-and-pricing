@@ -94,8 +94,8 @@ async function callGemini(parts, only, think = 'low', budget = 60000) {
       listed = true; queue.push(...(await listModels()).filter((x) => !tried.has(x) && ok(x)).slice(0, 4));
     }
   };
-  // If a model has not answered after 25 s, ask the next one as well and take whichever answers first.
-  const HEDGE = 25000;
+  // If a model has not answered after 15 s, ask the next one as well and take whichever answers first.
+  const HEDGE = 15000;
   let m = await next();
   while (m && Date.now() - started < budget - 4000) {
     const a = attempt(m);
