@@ -295,7 +295,8 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     if (!ev || !okTotals(ev)) { const again = await readPages(images, prompt, okTotals, true); if (again) { again.log = [...(split.log || []), ...(again.log || [])]; split = again; } }
   }
   const useRace = !testModel && images.length === 1;
-  const res = split || (useRace ? await raceRead([...images, { text: prompt }], okTotals, 90000) : await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000));
+  const claudeTest = /^claude/.test(testModel || '') && AKEY;
+  const res = split || (claudeTest ? await callClaude([...images, { text: prompt }], false, 60000) : useRace ? await raceRead([...images, { text: prompt }], okTotals, 90000) : await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000));
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
