@@ -144,9 +144,12 @@ async function callClaude(parts, careful, timeout, stop) {
       body: JSON.stringify({ model: m, max_tokens: 16000, ...extra, messages: [{ role: 'user', content }] }),
       signal,
     });
-    let r = await send({ temperature: 0 });
+    // The first read does not "think" first (that was most of the reading time); the careful second look may.
+    const base = careful ? {} : { thinking: { type: 'disabled' } };
+    let r = await send({ ...base, temperature: 0 });
     let body = await r.text();
-    if (r.status === 400 && /temperature/i.test(body)) { r = await send({}); body = await r.text(); }
+    if (r.status === 400 && /temperature/i.test(body)) { r = await send(base); body = await r.text(); }
+    if (r.status === 400 && /thinking/i.test(body)) { r = await send({}); body = await r.text(); }
     if (!r.ok) {
       let why = ''; try { why = JSON.parse(body).error?.message || ''; } catch {}
       return { ok: false, status: r.status, why, log: [line(r.status + (why ? ' ' + why.slice(0, 80) : ''))] };
