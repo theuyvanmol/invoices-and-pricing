@@ -5,10 +5,10 @@ import { json, fail, sql } from './_lib.js';
 export const KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 // Paid Claude reading (separate pay-as-you-go Anthropic API account, not a Claude subscription).
 // When ANTHROPIC_API_KEY is set, Claude reads first and the free Google readers are only a backup.
-// Claude reading is switched off: it is only used if READER=claude is set in Vercel as well as the key.
-export const AKEY = process.env.READER === 'claude' ? process.env.ANTHROPIC_API_KEY || '' : '';
+// Claude reads first whenever ANTHROPIC_API_KEY is set (READER=google switches it off again).
+export const AKEY = process.env.READER === 'google' ? '' : process.env.ANTHROPIC_API_KEY || '';
 const CLAUDE_FAST = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
-const CLAUDE_CAREFUL = process.env.CLAUDE_CAREFUL_MODEL || 'claude-sonnet-5-5';
+const CLAUDE_CAREFUL = process.env.CLAUDE_CAREFUL_MODEL || 'claude-haiku-5-5'; // the second look also uses Haiku, to keep costs low
 // Free models in order: the best readers first, the Lite ones last. Each has its own free daily allowance,
 // so when one is used up (or busy) the next one takes over.
 const ORDER = [...new Set([process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'].filter(Boolean))];
