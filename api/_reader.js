@@ -53,13 +53,14 @@ async function coolDown(m, status, body) {
   try { await sql`update settings set data = jsonb_set(data, '{aiCool}', ${JSON.stringify(cool)}::jsonb, true) where id = 1`; } catch {}
 }
 export const coolingNow = async () => Object.fromEntries(Object.entries(await loadCool()).filter(([, t]) => t > Date.now()).map(([m, t]) => [m, new Date(t).toISOString()]));
-async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0) {
+async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0, opt = {}) {
   // Lite models misread long invoices with no thinking, so they always think a little.
   const bodyFor = (m, think = /lite/.test(m) && think0 === 'minimal' ? 'low' : think0) => JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(think && !noThink.has(m) ? (/gemini-[3-9]|latest/.test(m) ? { thinkingConfig: { thinkingLevel: think } } : /gemini-2/.test(m) ? { thinkingConfig: { thinkingBudget: think === 'minimal' ? 0 : think === 'low' ? 512 : 4096 } } : {}) : {}) } });
   const started = Date.now();
   const tried = new Set();
   await loadCool();
-  const ok = (m) => only || !(cool[m] > Date.now());
+  const inPool = (m) => !opt.pool || (opt.pool === 'lite' ? /lite/.test(m) : !/lite/.test(m));
+  const ok = (m) => only || (!(cool[m] > Date.now()) && inPool(m));
   let queue = only ? [only] : ORDER.filter(ok), listed = !!only, last = null;
   if (rot && queue.length) { const good = queue.filter((x) => !/lite/.test(x)), lite = queue.filter((x) => /lite/.test(x)); const k = good.length ? rot % good.length : 0; queue = [...good.slice(k), ...good.slice(0, k), ...lite]; }
   const log = [];
@@ -70,6 +71,7 @@ async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0) 
   // One request to one model. Retries once when Google is briefly busy; remembers used-up models.
   const attempt = (m) => {
     const ctl = new AbortController();
+    if (opt.signal) { if (opt.signal.aborted) ctl.abort(); else opt.signal.addEventListener('abort', () => ctl.abort(), { once: true }); }
     const p = (async () => {
       for (let a = 0; a < 2; a++) {
         const left = budget - (Date.now() - started);
@@ -84,7 +86,6 @@ async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0) 
         if (r.ok) return r;
         const t = await r.clone().text().catch(() => '');
         if (r.status === 400 && !noThink.has(m) && /thinking/i.test(t)) { noThink.add(m); a--; continue; }
-        if (r.status === 503 && a === 0) { await new Promise((z) => setTimeout(z, 1500)); continue; }
         if ((r.status === 429 || r.status === 404 || r.status === 503) && !only) await coolDown(m, r.status, t);
         return r;
       }
@@ -107,7 +108,7 @@ async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0) 
   // If a model has not answered after 10 s, ask the next one as well and take whichever answers first.
   const HEDGE = 10000;
   let m = await next();
-  while (m && Date.now() - started < budget - 4000) {
+  while (m && Date.now() - started < budget - 4000 && !opt.signal?.aborted) {
     const a = attempt(m);
     let r = await Promise.race([a.p, new Promise((z) => setTimeout(() => z(null), HEDGE))]);
     if (r === null) {
@@ -171,6 +172,36 @@ async function callAI(parts, only, think, budget, careful) {
 }
 
 const parseJson = (t) => { try { return JSON.parse(t); } catch { const m = String(t).match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } } };
+// Free Google reading: ask a full Flash reader and a Lite reader at the same time.
+// The first answer that passes the check wins; if neither passes, the Flash answer is preferred.
+async function evalRes(r) {
+  try {
+    const out = await r.json();
+    const text = (out.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n');
+    const data = parseJson(text);
+    if (!data || !Array.isArray(data.lines)) return null;
+    return { data, text };
+  } catch { return null; }
+}
+async function raceRead(parts, accept, budget = 90000, rot = 0) {
+  const ctl = new AbortController();
+  const runs = [callGemini(parts, null, 'low', budget, rot, { pool: 'good', signal: ctl.signal }), callGemini(parts, null, 'low', budget, 0, { pool: 'lite', signal: ctl.signal })];
+  const results = [];
+  const pick = await new Promise((res) => {
+    let done = 0;
+    runs.forEach((p, i) => p.then(async (r) => {
+      const ev = r.ok ? await evalRes(r.clone ? r.clone() : r) : null;
+      results[i] = { r, ev };
+      if (ev && accept(ev)) { ctl.abort(); res(results[i]); return; }
+      if (++done === 2) res((results[0].ev && results[0]) || (results[1].ev && results[1]) || results[0]);
+    }, () => { results[i] = { r: { ok: false, status: 504, log: [] } }; if (++done === 2) res(results[0]?.ev ? results[0] : results[1]?.ev ? results[1] : results[0]); }));
+  });
+  const log = [0, 1].flatMap((i) => (results[i] ? (results[i].r.log || []).map((l) => (i ? 'lite ' : '') + l) : []));
+  if (!pick.ev) return Object.assign(pick.r, { log: [...new Set([...(pick.r.log || []), ...log])] });
+  const out = { candidates: [{ content: { parts: [{ text: pick.ev.text }] } }] };
+  return { ok: true, status: 200, model: pick.r.model, log, json: async () => out, text: async () => pick.ev.text };
+}
+
 async function readPages(images, prompt, google) {
   const n = images.length;
   const pageNote = (i) => `
@@ -181,7 +212,7 @@ IMPORTANT: you are given only page ${i + 1} of ${n} of this invoice; the other p
 - Fill sections (with their subtotal), subtotalExVat and invoiceTotal only if they are printed on this page.
 - Lines at the top of this page that continue a section from the previous page belong to that section: use its name as category if it is shown (e.g. a "/CONT" heading); otherwise leave category out.
 - Do not set incomplete just because other pages are missing.`;
-  const runs = await Promise.all(images.map((img, i) => google ? callGemini([img, { text: prompt + pageNote(i) }], null, 'minimal', 80000, i) : callClaude([img, { text: prompt + pageNote(i) }], false, 60000)));
+  const runs = await Promise.all(images.map((img, i) => google ? raceRead([img, { text: prompt + pageNote(i) }], (ev) => Array.isArray(ev.data.lines), 80000, i) : callClaude([img, { text: prompt + pageNote(i) }], false, 60000)));
   if (runs.some((r) => !r.ok)) return null; // fall back to one read of all pages
   const pages = await Promise.all(runs.map(async (r) => { try { return parseJson(((await r.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n')); } catch { return null; } }));
   if (pages.some((d) => !d)) return null;
@@ -248,7 +279,9 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   if (!images) return fail('A photo could not be loaded. Take it again.', 422);
   // Several pages with Claude: read every page at the same time and join them (a 5-page invoice takes as long as one page).
   const split = images.length > 1 && !testModel ? await readPages(images, prompt, !AKEY) : null;
-  const res = split || await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, AKEY ? 'low' : 'minimal', 100000);
+  const useRace = !AKEY && !testModel && images.length === 1;
+  const okTotals = (ev) => { try { const d = JSON.parse(JSON.stringify(ev.data)); fixLines(d); return !checkTotals(d); } catch { return false; } };
+  const res = split || (useRace ? await raceRead([...images, { text: prompt }], okTotals, 90000) : await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000));
   if (!res.ok) {
     const t = await res.text();
     console.error('Gemini error', res.status, t.slice(0, 500));
@@ -285,7 +318,7 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
     }
   }
   const used = usedModel || res.model || model;
-  data.reader = { model: used, backup: !/^claude-/.test(used) && (!/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(used) || /lite/.test(used)), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: [...(res.log || []), ...(retryLog || [])] };
+  data.reader = { model: used, backup: !!issue && !/^claude-/.test(used) && (!/^gemini-3\.[5-9]-flash$|^gemini-flash-latest$/.test(used) || /lite/.test(used)), checked: !!issue === false, issue: issue || '', secs: Math.round((Date.now() - t0) / 100) / 10, log: [...(res.log || []), ...(retryLog || [])] };
   return json(data);
 }
 
