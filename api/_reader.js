@@ -154,7 +154,8 @@ async function callClaude(parts, careful, timeout, stop) {
     const j = JSON.parse(body);
     const text = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
     const out = { candidates: [{ content: { parts: [{ text }] } }] };
-    return { ok: true, status: 200, model: m, log: [line(200)], json: async () => out, text: async () => text, usage: j.usage };
+    const u = j.usage || {};
+    return { ok: true, status: 200, model: m, log: [line(`200 in=${u.input_tokens || '?'} out=${u.output_tokens || '?'} chars=${text.length}${(j.content || []).some((c) => c.type === 'thinking') ? ' thinking' : ''}`)], json: async () => out, text: async () => text, usage: j.usage };
   } catch (e) {
     return { ok: false, status: 504, why: 'timed out', log: [line('timeout')] };
   }
