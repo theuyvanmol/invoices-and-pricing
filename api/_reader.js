@@ -125,7 +125,7 @@ async function callGemini(parts, only, think0 = 'low', budget = 60000, rot = 0, 
 }
 
 // Reads with Claude. Returns a response shaped like Gemini's, so the rest of the code is the same.
-async function callClaude(parts, careful, timeout) {
+async function callClaude(parts, careful, timeout, stop) {
   const m = careful ? CLAUDE_CAREFUL : CLAUDE_FAST;
   const started = Date.now();
   const content = parts.map((p) => {
@@ -137,7 +137,7 @@ async function callClaude(parts, careful, timeout) {
   content.push({ type: 'text', text: 'Answer with the JSON object only.' });
   const line = (x) => `${m}:${x}:${Math.round((Date.now() - started) / 1000)}s`;
   try {
-    const signal = AbortSignal.timeout(timeout);
+    const signal = stop ? AbortSignal.any([AbortSignal.timeout(timeout), stop]) : AbortSignal.timeout(timeout);
     const send = (extra) => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': AKEY, 'anthropic-version': '2023-06-01' },
@@ -184,25 +184,32 @@ async function evalRes(r) {
   } catch { return null; }
 }
 async function raceRead(parts, accept, budget = 90000, rot = 0) {
+  // Several readers start at the same time; the first answer that passes the check is used straight away.
+  // With Claude: Claude (steady, accurate) and the free Google Lite reader (often 3-4 s).
+  // Without Claude: a free Google Flash reader and a Lite reader. If nothing passes, the most accurate answer is used.
   const ctl = new AbortController();
-  const runs = [callGemini(parts, null, 'low', budget, rot, { pool: 'good', signal: ctl.signal }), callGemini(parts, null, 'low', budget, 0, { pool: 'lite', signal: ctl.signal })];
+  const runs = [], names = [];
+  if (AKEY) { runs.push(callClaude(parts, false, Math.min(60000, budget - 5000), ctl.signal)); names.push(''); }
+  if (KEY && !AKEY) { runs.push(callGemini(parts, null, 'low', budget, rot, { pool: 'good', signal: ctl.signal })); names.push(''); }
+  if (KEY) { runs.push(callGemini(parts, null, 'low', budget, AKEY ? rot : 0, { pool: 'lite', signal: ctl.signal })); names.push('lite '); }
   const results = [];
+  const best = () => results.find((x) => x && x.ev) || results.find(Boolean);
   const pick = await new Promise((res) => {
     let done = 0;
     runs.forEach((p, i) => p.then(async (r) => {
       const ev = r.ok ? await evalRes(r.clone ? r.clone() : r) : null;
       results[i] = { r, ev };
       if (ev && accept(ev)) { ctl.abort(); res(results[i]); return; }
-      if (++done === 2) res((results[0].ev && results[0]) || (results[1].ev && results[1]) || results[0]);
-    }, () => { results[i] = { r: { ok: false, status: 504, log: [] } }; if (++done === 2) res(results[0]?.ev ? results[0] : results[1]?.ev ? results[1] : results[0]); }));
+      if (++done === runs.length) res(best());
+    }, () => { results[i] = { r: { ok: false, status: 504, log: [], text: async () => '{}' } }; if (++done === runs.length) res(best()); }));
   });
-  const log = [0, 1].flatMap((i) => (results[i] ? (results[i].r.log || []).map((l) => (i ? 'lite ' : '') + l) : []));
+  const log = runs.flatMap((_, i) => (results[i] ? (results[i].r.log || []).map((l) => names[i] + l) : []));
   if (!pick.ev) return Object.assign(pick.r, { log: [...new Set([...(pick.r.log || []), ...log])] });
   const out = { candidates: [{ content: { parts: [{ text: pick.ev.text }] } }] };
   return { ok: true, status: 200, model: pick.r.model, log, json: async () => out, text: async () => pick.ev.text };
 }
 
-async function readPages(images, prompt, google) {
+async function readPages(images, prompt, accept, claudeOnly) {
   const n = images.length;
   const pageNote = (i) => `
 
@@ -212,7 +219,7 @@ IMPORTANT: you are given only page ${i + 1} of ${n} of this invoice; the other p
 - Fill sections (with their subtotal), subtotalExVat and invoiceTotal only if they are printed on this page.
 - Lines at the top of this page that continue a section from the previous page belong to that section: use its name as category if it is shown (e.g. a "/CONT" heading); otherwise leave category out.
 - Do not set incomplete just because other pages are missing.`;
-  const runs = await Promise.all(images.map((img, i) => google ? raceRead([img, { text: prompt + pageNote(i) }], (ev) => Array.isArray(ev.data.lines), 80000, i) : callClaude([img, { text: prompt + pageNote(i) }], false, 60000)));
+  const runs = await Promise.all(images.map((img, i) => claudeOnly ? callClaude([img, { text: prompt + pageNote(i) }], false, 60000) : raceRead([img, { text: prompt + pageNote(i) }], accept, 80000, i)));
   if (runs.some((r) => !r.ok)) return null; // fall back to one read of all pages
   const pages = await Promise.all(runs.map(async (r) => { try { return parseJson(((await r.json()).candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('\n')); } catch { return null; } }));
   if (pages.some((d) => !d)) return null;
@@ -278,9 +285,15 @@ ${prod.map((p) => `${p.name} (${p.unit}) — ${p.supplier}`).join('\n') || 'none
   const images = await imagesP;
   if (!images) return fail('A photo could not be loaded. Take it again.', 422);
   // Several pages with Claude: read every page at the same time and join them (a 5-page invoice takes as long as one page).
-  const split = images.length > 1 && !testModel ? await readPages(images, prompt, !AKEY) : null;
-  const useRace = !AKEY && !testModel && images.length === 1;
   const okTotals = (ev) => { try { const d = JSON.parse(JSON.stringify(ev.data)); fixLines(d); return !checkTotals(d); } catch { return false; } };
+  // Several pages: every page is read at the same time. If the joined pages do not add up and Claude is set up,
+  // Claude reads every page again (still at the same time).
+  let split = images.length > 1 && !testModel ? await readPages(images, prompt, okTotals) : null;
+  if (split && AKEY && !/^claude/.test(split.model || '')) {
+    const ev = await evalRes(split);
+    if (!ev || !okTotals(ev)) { const again = await readPages(images, prompt, okTotals, true); if (again) { again.log = [...(split.log || []), ...(again.log || [])]; split = again; } }
+  }
+  const useRace = !testModel && images.length === 1;
   const res = split || (useRace ? await raceRead([...images, { text: prompt }], okTotals, 90000) : await callAI([...images, { text: prompt }], /^[a-z0-9.-]{3,60}$/.test(testModel || '') ? testModel : null, 'low', 100000));
   if (!res.ok) {
     const t = await res.text();
