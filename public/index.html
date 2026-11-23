@@ -490,7 +490,7 @@ const I={
  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>'
 };
 const VIEWS={home:'Overview',suppliers:'Suppliers & prices',supplier:'Supplier',compare:'Compare suppliers',scan:'Add invoice',alerts:'Price alerts',invoices:'Invoices',import:'Import many invoices',settings:'Settings'};
-const SUBS={home:'Everything you are paying, updated from every invoice.',suppliers:'Tap a supplier to see its products and prices, its invoices and its price rises.',compare:'Type a product to see what every supplier charges for it, cheapest first.',scan:'Take a photo, upload a photo or PDF, or type it in. You check everything before it is saved.',alerts:'Every rise in a price per unit, found on your invoices.',invoices:'All invoices, grouped by supplier.',import:'Bring in a lot of invoices at once, from this device or a Google Drive folder.',settings:'Alert rules, email and logins.'};
+const SUBS={home:'Everything you are paying, updated from every invoice.',suppliers:'Tap a supplier to see its products and prices, its invoices and its price rises.',compare:'Type a product to see what every supplier charges for it, cheapest first.',scan:'Take a photo or choose a photo or PDF. It starts reading straight away, and you check everything before it is saved.',alerts:'Every rise in a price per unit, found on your invoices.',invoices:'All invoices, grouped by supplier.',import:'Bring in a lot of invoices at once, from this device or a Google Drive folder.',settings:'Alert rules, email and logins.'};
 
 /* ---------- state ---------- */
 const S={sup:[],prod:[],inv:[],alerts:[],settings:{threshold:0,currency:'£',restaurant:'Geisha Restaurant',alertEmail:'',pinsEnabled:false},loaded:{},err:null,slow:false,noDb:false,role:null,features:{}};
@@ -535,7 +535,9 @@ async function api(path,opts={}){
 /* A new version was deployed: reload open pages so nobody keeps using an old copy. */
 let APPV=null,newVer=false;
 function checkVersion(v){if(!v)return;if(!APPV){APPV=v;return}if(v!==APPV&&!newVer){newVer=true;updateApp()}}
-function busyNow(){return scan.step==='review'||IMP.running||DRV.busy||!!document.querySelector('#main input:focus,#main textarea:focus,#main select:focus')}
+let PICKING=0;
+const picking=()=>PICKING&&Date.now()-PICKING<120000;
+function busyNow(){return picking()||scan.step==='review'||IMP.running||DRV.busy||!!document.querySelector('#main input:focus,#main textarea:focus,#main select:focus')}
 function updateApp(){
   if(!busyNow()){location.reload();return}
   if($('#newver'))return;
@@ -555,7 +557,7 @@ async function load(){
   finally{loading=false;schedule()}
 }
 setInterval(()=>{if(document.visibilityState==='visible'&&S.role&&scan.step!=='review')load()},20000);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')load()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!picking())load()});
 
 /* ---------- sign in ---------- */
 let pin='';
@@ -1166,7 +1168,7 @@ function reviewHTML(){
   const supSel=`<select class="field" id="dSup">${[...S.sup].sort((a,b)=>a.name.localeCompare(b.name)).map(s=>`<option value="${esc(s.id)}" ${d.supplierId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}<option value="new" ${d.supplierId==='new'?'selected':''}>+ New supplier…</option></select>`;
   const tot=draftTotal(),printed=num(d.printedTotal);
   const mismatch=printed>0&&Math.abs(printed-tot)>0.05;
-  return `<div class="reviewgrid">${scan.photos.length?`<aside class="panel" style="padding:12px"><div class="photostrip">${scan.photos.map((p,i)=>p.pdf?`<object class="pdfview" data="${p.url}" type="application/pdf"><a class="btn" href="${p.url}" target="_blank" rel="noopener">Open PDF</a></object>`:`<a href="${p.url}" target="_blank" rel="noopener"><img src="${p.url}" alt="Invoice page ${i+1}"></a>`).join('')}</div><p class="small muted" style="margin-top:8px">Tap a page to zoom.</p>${S.features.ai!==false&&scan.kind!=='pricelist'?`<label class="btn sm" style="margin-top:8px;width:100%">+ Add page and read again<input type="file" accept="image/*,application/pdf,.pdf" data-addpage="1" hidden></label>`:''}</aside>`:''}
+  return `<div class="reviewgrid">${scan.photos.length?`<aside class="panel" style="padding:12px"><div class="photostrip">${scan.photos.map((p,i)=>p.pdf?`<object class="pdfview" data="${p.url}" type="application/pdf"><a class="btn" href="${p.url}" target="_blank" rel="noopener">Open PDF</a></object>`:`<a href="${p.url}" target="_blank" rel="noopener"><img src="${p.url}" alt="Invoice page ${i+1}"></a>`).join('')}</div><p class="small muted" style="margin-top:8px">Tap a page to zoom.</p>${S.features.ai!==false&&scan.kind!=='pricelist'?`<label class="btn sm" style="margin-top:8px;width:100%">+ Add another page<input type="file" accept="image/*,application/pdf,.pdf" data-addpage="1" hidden></label>`:''}</aside>`:''}
   <section class="panel" style="${scan.photos.length?'':'grid-column:1/-1'}"><div class="panel-h"><h2>${scan.kind==='pricelist'?'Supplier prices':'Check the details'}</h2>${scan.source==='ai'?'<span class="pill new">Read automatically</span>':''}</div><div class="panel-b">
     ${scan.source==='ai'?'<p class="notice" style="margin-bottom:14px">Compare each line with the photo. Fix anything that was read wrong before saving.</p>':''}
     <div class="form2"><label class="fl"><span>Supplier</span>${supSel}</label><label class="fl" ${d.supplierId==='new'?'':'hidden'} id="dNewWrap"><span>New supplier name</span><input class="field" id="dNewSup" value="${esc(d.newSupplier||'')}" placeholder="Supplier name"></label><label class="fl"><span>${scan.kind==='pricelist'?'Reference (optional)':'Invoice number'}</span><input class="field mono" id="dNum" value="${esc(d.number)}" placeholder="e.g. INV-2041"></label><label class="fl"><span>${scan.kind==='pricelist'?'Prices valid from':'Invoice date'}</span><input class="field" id="dDate" type="date" value="${esc(d.date)}"></label></div>
@@ -1407,6 +1409,7 @@ function countUp(root){
   });
 }
 function render(){
+  if(picking()&&(view()==='scan'||view()==='import'))return;
   renderNav();
   const v=view();
   if(IMP.running&&v==='scan'&&scan.step==='review'&&document.getElementById('dLines'))return;
@@ -1506,16 +1509,31 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.matches('tr[data-product]'))showProduct(e.target.dataset.product);
 });
 $('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()});
+/* Photo and file pickers: each input listens to itself, so the photo still arrives even if the screen was redrawn
+   while the camera or gallery was open. While a picker is open the app does not refresh or reload. */
+function pickDone(){PICKING=0}
+async function onFilePicked(t){
+  pickDone();
+  const files=[...(t.files||[])];if(!files.length)return;
+  if(t.dataset.photo){await addPhotos(files);t.value='';
+    // one go: start reading straight away; more pages can still be added on the check screen
+    if(scan.step==='capture'&&scan.photos.length&&scan.kind!=='pricelist'&&S.features.ai!==false&&view()==='scan')readInvoice();
+    return}
+  if(t.dataset.addpage){const keep={supplierId:scan.draft.supplierId,number:scan.draft.number};await addPhotos(files);t.value='';const drive=scan.driveFileId,ik=scan.importKey,hist=scan.driveHistoric;await readInvoice();if(scan.step==='review'){scan.driveFileId=drive;scan.importKey=ik;scan.driveHistoric=hist;if(!scan.draft.number)scan.draft.number=keep.number}return}
+  if(t.dataset.imp){impAdd(files);t.value='';return}
+}
+function bindFile(el){if(el.dataset.bound)return;el.dataset.bound='1';el.addEventListener('change',()=>onFilePicked(el));el.addEventListener('click',()=>{PICKING=Date.now()});el.addEventListener('cancel',pickDone)}
+new MutationObserver(()=>document.querySelectorAll('input[type=file]').forEach(bindFile)).observe(document.body,{childList:true,subtree:true});
+document.querySelectorAll('input[type=file]').forEach(bindFile);
+window.addEventListener('focus',()=>{if(PICKING)setTimeout(()=>{if(PICKING&&Date.now()-PICKING>1500)pickDone()},4000)});
 document.addEventListener('change',async e=>{
   const t=e.target;
-  if(t.dataset.photo){addPhotos([...t.files]);t.value='';return}
+  if(t.type==='file')return;
   if(t.dataset.lf==='qty'&&/[a-z]/i.test(t.value)){const el=t.closest('.line'),i=+el.dataset.line,l=scan.draft.lines[i];const r=parseQty(t.value);if(r.q>0){l.qty=String(r.q);t.value=l.qty;if(r.unit){l.unit=r.unit;const u=el.querySelector('[data-lf="unit"]');if(u)u.value=r.unit}if(num(l.total)>0&&!num(l.price)){l.price=String(Math.round(num(l.total)/r.q*100)/100);const pe=el.querySelector('[data-lf="price"]');if(pe)pe.value=l.price}refreshCmp()}return}
   if(t.dataset.lf==='credit'||t.dataset.lf==='other'){const el=t.closest('.line'),i=+el.dataset.line,l=scan.draft.lines[i];
     if(t.dataset.lf==='credit'){l.credit=t.checked;const v=Math.abs(num(l.price));l.price=v?String(t.checked?-v:v):l.price;if(t.checked)l.other=true}else{l.other=t.checked;if(!t.checked){l.credit=false;if(num(l.price)<0)l.price=String(Math.abs(num(l.price)))}}
     const tmp=document.createElement('div');tmp.innerHTML=lineHTML(l,i);el.replaceWith(tmp.firstChild);refreshCmp();return}
   if(t.dataset.lf==='promo'){const i=+t.closest('.line').dataset.line;scan.draft.lines[i].promo=t.checked;refreshCmp();return}
-  if(t.dataset.addpage){const keep={supplierId:scan.draft.supplierId,number:scan.draft.number};await addPhotos([...t.files]);t.value='';const drive=scan.driveFileId,ik=scan.importKey,hist=scan.driveHistoric;await readInvoice();if(scan.step==='review'){scan.driveFileId=drive;scan.importKey=ik;scan.driveHistoric=hist;if(!scan.draft.number)scan.draft.number=keep.number}return}
-  if(t.dataset.imp){impAdd(t.files);t.value='';return}
   if(t.id==='psup'){UI.psup=t.value;render()}
   if(t.id==='lsup'){UI.lsup=t.value;render()}
   if(t.id==='psort'){UI.psort=t.value;render()}
