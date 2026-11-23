@@ -293,6 +293,33 @@ tr[data-supplier]{cursor:pointer}
 .br-s{font-size:12.5px;color:var(--muted)}
 @media (max-width:1050px){.band{grid-template-columns:repeat(2,minmax(0,1fr))}.band-c:nth-child(3){border-left:0}.band-c:nth-child(n+3){border-top:1px solid var(--line)}.ovgrid,.ovgrid.even{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:520px){.band-c{padding:14px 14px}.band-c .b-v{font-size:24px}.alertbar .ab-go{display:none}.alertbar .ab-t b{font-size:15px}}
+/* Motion */
+@media (prefers-reduced-motion:no-preference){
+  .anim-in .band,.anim-in>.alertbar,.anim-in .ovgrid>.panel,.anim-in>.panel{animation:rise .55s cubic-bezier(.2,.7,.2,1) both}
+  .anim-in .band{animation-delay:.04s}
+  .anim-in .ovgrid>.panel{animation-delay:var(--d,.12s)}
+  .anim-in .ovgrid>.panel+.panel{animation-delay:calc(var(--d,.12s) + .06s)}
+  .anim-in>.panel{animation-delay:.36s}
+  .anim-in .br-m span{animation:grow 1s cubic-bezier(.2,.7,.2,1) .25s both;transform-origin:left center}
+  .anim-in .chart .bar{animation:barup .8s cubic-bezier(.2,.7,.2,1) both;transform-box:fill-box;transform-origin:center bottom}
+  .anim-in .chart .bar:nth-of-type(2){animation-delay:.3s}.anim-in .chart .bar:nth-of-type(3){animation-delay:.34s}.anim-in .chart .bar:nth-of-type(4){animation-delay:.38s}.anim-in .chart .bar:nth-of-type(5){animation-delay:.42s}.anim-in .chart .bar:nth-of-type(6){animation-delay:.46s}.anim-in .chart .bar:nth-of-type(7){animation-delay:.5s}.anim-in .chart .bar:nth-of-type(8){animation-delay:.54s}
+  .anim-in .band-c.hot .b-v{animation:pulse 1.6s ease-out .9s 1}
+  .anim-page{animation:fadein .25s ease-out both}
+  .sheet:not([hidden]){animation:fadein .18s ease-out}
+  .sheet:not([hidden]) .sheet-card{animation:sheetup .28s cubic-bezier(.2,.8,.2,1)}
+  .toast{animation:toastin .25s cubic-bezier(.2,.8,.2,1)}
+  .btn,.navbtn,.tab,.row,.band-c,.barrow,.supcard,.chip{transition:background-color .15s,border-color .15s,color .15s,transform .12s}
+  .btn:active,.chip:active,.supcard:active,.band-c:active{transform:scale(.98)}
+  .grp[open]>.rows{animation:fadein .2s ease-out}
+  .spinner{animation:spin .9s linear infinite}
+}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes barup{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes sheetup{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes toastin{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes pulse{0%{text-shadow:0 0 0 transparent}30%{transform:scale(1.06)}100%{transform:none}}
 .toast{position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:var(--shadow);max-width:calc(100vw - 32px)}
 .toast[hidden]{display:none}
 .notice{font-size:13px;color:var(--ink-2);background:var(--surface-2);border-radius:10px;padding:10px 12px}
@@ -621,17 +648,17 @@ function vHome(){
 
   /* money band */
   h+=`<section class="band">
-    <button class="band-c" data-go="invoices"><span class="b-l">Spent this month</span><span class="b-v">${loading?'…':money(mSpend)}</span><span class="b-s">${loading?'':delta(mSpend,lmSpendSame,'the same days last month')}</span></button>
-    <button class="band-c" data-go="invoices"><span class="b-l">Spent this week</span><span class="b-v">${loading?'…':money(wSpend)}</span><span class="b-s">${loading?'':delta(wSpend,lwSpendSame,'last week so far')}</span></button>
-    <button class="band-c" data-go="invoices"><span class="b-l">Invoices this month</span><span class="b-v">${loading?'…':mInv.length}</span><span class="b-s muted">Last month in full: ${money(lmFull)}</span></button>
-    <button class="band-c ${oa.length?'hot':''}" data-go="alerts"><span class="b-l">Price rises to review</span><span class="b-v">${loading?'…':oa.length}</span><span class="b-s">${oa.length?`<span class="t-up">About ${money(extraCost)} extra</span> <span class="muted">on the last orders</span>`:'<span class="t-down">Nothing waiting</span>'}</span></button>
+    <button class="band-c" data-go="invoices"><span class="b-l">Spent this month</span><span class="b-v" data-count="${mSpend}" data-kind="money">${loading?'…':money(mSpend)}</span><span class="b-s">${loading?'':delta(mSpend,lmSpendSame,'the same days last month')}</span></button>
+    <button class="band-c" data-go="invoices"><span class="b-l">Spent this week</span><span class="b-v" data-count="${wSpend}" data-kind="money">${loading?'…':money(wSpend)}</span><span class="b-s">${loading?'':delta(wSpend,lwSpendSame,'last week so far')}</span></button>
+    <button class="band-c" data-go="invoices"><span class="b-l">Invoices this month</span><span class="b-v" data-count="${mInv.length}">${loading?'…':mInv.length}</span><span class="b-s muted">Last month in full: ${money(lmFull)}</span></button>
+    <button class="band-c ${oa.length?'hot':''}" data-go="alerts"><span class="b-l">Price rises to review</span><span class="b-v" data-count="${oa.length}">${loading?'…':oa.length}</span><span class="b-s">${oa.length?`<span class="t-up">About ${money(extraCost)} extra</span> <span class="muted">on the last orders</span>`:'<span class="t-down">Nothing waiting</span>'}</span></button>
   </section>`;
 
   /* row 1: price rises + where the money goes */
   const supM={};mInv.forEach(i=>supM[i.supplierId]=(supM[i.supplierId]||0)+num(i.total));
   const supL={};between(lms,lmSame).forEach(i=>supL[i.supplierId]=(supL[i.supplierId]||0)+num(i.total));
   const supArr=Object.entries(supM).sort((a,b)=>b[1]-a[1]);const supMax=supArr[0]?.[1]||1;
-  h+=`<div class="ovgrid"><section class="panel"><div class="panel-h"><h2>Price rises to review</h2>${oa.length?`<button class="btn ghost sm" data-go="alerts">Open alerts</button>`:''}</div>${oa.length?`
+  h+=`<div class="ovgrid" style="--d:0.16s"><section class="panel"><div class="panel-h"><h2>Price rises to review</h2>${oa.length?`<button class="btn ghost sm" data-go="alerts">Open alerts</button>`:''}</div>${oa.length?`
     <div class="tablewrap table-d"><table class="list"><thead><tr><th>Product</th><th>Supplier</th><th class="num">Was</th><th class="num">Now</th><th class="num">Rise</th>${isOwner()?'<th></th>':''}</tr></thead><tbody>${oa.slice(0,8).map(a=>`<tr data-product="${esc(a.productId)}" tabindex="0"><td><b>${esc(a.productName)}</b><div class="muted small">per ${esc(a.unit)}, ${fmtShort(a.date)}</div></td><td>${esc(supName(a.supplierId))}</td><td class="num muted">${moneyU(a.from)}</td><td class="num price">${moneyU(a.to)}</td><td class="num"><span class="pill up">+${num(a.pct).toFixed(1)}%</span></td>${isOwner()?`<td class="num"><button class="btn sm" data-review="${esc(a.id)}" title="Mark as reviewed">Done</button></td>`:''}</tr>`).join('')}</tbody></table></div>
     <div class="rows cards">${oa.slice(0,8).map(a=>`<button class="row" data-product="${esc(a.productId)}"><span class="t">${esc(a.productName)}</span><span class="r pill up">+${num(a.pct).toFixed(1)}%</span><span class="s">${esc(supName(a.supplierId))}: ${moneyU(a.from)} to <b>${moneyU(a.to)}</b> per ${esc(a.unit)}</span><span class="r small muted">${fmtShort(a.date)}</span></button>`).join('')}</div>
     ${oa.length>8?`<div class="g-foot"><button class="btn sm ghost" data-go="alerts">See all ${oa.length} price rises</button></div>`:''}`:'<div class="empty small"><b>No price rises waiting</b><p>When an invoice shows a higher price per unit than last time, it appears here.</p></div>'}</section>
@@ -641,7 +668,7 @@ function vHome(){
   const d30=new Date(now);d30.setDate(now.getDate()-30);const d30ISO=iso(d30);
   const changes=S.prod.map(p=>({p,c:change(p),l:latest(p),pr:previous(p)})).filter(x=>x.c&&Math.abs(x.c.diff)>0.004&&(x.l.d||'')>=d30ISO).sort((a,b)=>b.c.pct-a.c.pct);
   const ups=changes.filter(x=>x.c.diff>0).length,downs=changes.length-ups;
-  h+=`<div class="ovgrid"><section class="panel"><div class="panel-h"><h2>Price changes in the last 30 days</h2><span class="label">${ups} up, ${downs} down</span></div>${changes.length?`<div class="tablewrap table-d scrolly"><table class="list"><thead><tr><th>Product</th><th>Supplier</th><th class="num">Before</th><th class="num">Now</th><th class="num">Change</th><th class="num">Date</th></tr></thead><tbody>${changes.map(x=>`<tr data-product="${esc(x.p.id)}" tabindex="0"><td><b>${esc(x.p.name)}</b> <span class="muted small">per ${esc(x.p.unit)}</span></td><td>${esc(supName(x.p.supplierId))}</td><td class="num muted">${moneyU(x.pr.p)}</td><td class="num price">${moneyU(x.l.p)}</td><td class="num">${pill(x.c)}</td><td class="num small muted">${fmtShort(x.l.d)}</td></tr>`).join('')}</tbody></table></div>
+  h+=`<div class="ovgrid" style="--d:0.24s"><section class="panel"><div class="panel-h"><h2>Price changes in the last 30 days</h2><span class="label">${ups} up, ${downs} down</span></div>${changes.length?`<div class="tablewrap table-d scrolly"><table class="list"><thead><tr><th>Product</th><th>Supplier</th><th class="num">Before</th><th class="num">Now</th><th class="num">Change</th><th class="num">Date</th></tr></thead><tbody>${changes.map(x=>`<tr data-product="${esc(x.p.id)}" tabindex="0"><td><b>${esc(x.p.name)}</b> <span class="muted small">per ${esc(x.p.unit)}</span></td><td>${esc(supName(x.p.supplierId))}</td><td class="num muted">${moneyU(x.pr.p)}</td><td class="num price">${moneyU(x.l.p)}</td><td class="num">${pill(x.c)}</td><td class="num small muted">${fmtShort(x.l.d)}</td></tr>`).join('')}</tbody></table></div>
     <div class="rows cards">${changes.slice(0,12).map(x=>`<button class="row" data-product="${esc(x.p.id)}"><span class="t">${esc(x.p.name)}</span><span class="r">${pill(x.c)}</span><span class="s">${esc(supName(x.p.supplierId))}: ${moneyU(x.pr.p)} to <b>${moneyU(x.l.p)}</b> per ${esc(x.p.unit)}</span><span class="r small muted">${fmtShort(x.l.d)}</span></button>`).join('')}</div>`:'<div class="empty small"><p>No prices changed in the last 30 days.</p></div>'}</section>
     <section class="panel"><div class="panel-h"><h2>Weekly spend</h2><span class="label">Last 8 weeks</span></div><div class="panel-b">${spendChart(380)}</div></section></div>`;
 
@@ -649,7 +676,7 @@ function vHome(){
   const top={};mInv.forEach(i=>(i.lines||[]).forEach(l=>{if(!l.productId||l.other)return;const t=num(l.total??(num(l.qty)*num(l.price)));const o=top[l.productId]||(top[l.productId]={v:0,q:0,unit:l.unit});o.v+=t;o.q+=num(l.qty)}));
   const topArr=Object.entries(top).map(([id,o])=>({p:S.prod.find(p=>p.id===id),...o})).filter(x=>x.p).sort((a,b)=>b.v-a.v).slice(0,10);
   const recent=[...R].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||0)-(a.createdAt||0)).slice(0,8);
-  h+=`<div class="ovgrid even"><section class="panel"><div class="panel-h"><h2>Most spent on this month</h2><span class="label">Top 10 products</span></div>${topArr.length?`<div class="rows">${topArr.map((x,n)=>`<button class="row" data-product="${esc(x.p.id)}"><span class="t">${esc(x.p.name)}</span><span class="r price">${money(x.v)}</span><span class="s">${esc(supName(x.p.supplierId))}, ${+x.q.toFixed(2)} ${esc(x.p.unit)} bought</span><span class="r small muted">${latest(x.p)?moneyU(latest(x.p).p)+' per '+esc(x.p.unit):''}</span></button>`).join('')}</div>`:'<div class="empty small"><p>No products bought this month yet.</p></div>'}</section>
+  h+=`<div class="ovgrid even" style="--d:0.32s"><section class="panel"><div class="panel-h"><h2>Most spent on this month</h2><span class="label">Top 10 products</span></div>${topArr.length?`<div class="rows">${topArr.map((x,n)=>`<button class="row" data-product="${esc(x.p.id)}"><span class="t">${esc(x.p.name)}</span><span class="r price">${money(x.v)}</span><span class="s">${esc(supName(x.p.supplierId))}, ${+x.q.toFixed(2)} ${esc(x.p.unit)} bought</span><span class="r small muted">${latest(x.p)?moneyU(latest(x.p).p)+' per '+esc(x.p.unit):''}</span></button>`).join('')}</div>`:'<div class="empty small"><p>No products bought this month yet.</p></div>'}</section>
     <section class="panel"><div class="panel-h"><h2>Latest invoices</h2><button class="btn ghost sm" data-go="invoices">All invoices</button></div><div class="rows">${recent.map(i=>{const al=S.alerts.filter(a=>a.invoiceId===i.id&&a.status!=='reviewed').length;return `<button class="row" data-invoice="${esc(i.id)}"><span class="t">${esc(supName(i.supplierId))}</span><span class="r price">${money(i.total)}</span><span class="s">${fmtDate(i.date)}, ${i.number?'no. '+esc(i.number):'no number'}, ${plural((i.lines||[]).length,'line')}</span><span class="r">${al?`<span class="pill up">${plural(al,'price rise')}</span>`:''}</span></button>`}).join('')||'<div class="empty small"><p>No invoices yet.</p></div>'}</div></section></div>`;
 
   /* row 4: every supplier */
@@ -1368,6 +1395,17 @@ async function deleteInvoice(id){
 
 /* ---------- render ---------- */
 let lastView=null;
+/* Motion: one entrance per page visit; numbers count up on the Overview. Off when the device asks for reduced motion. */
+let ANIMV=null;
+const REDUCED=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+function countUp(root){
+  root.querySelectorAll('[data-count]').forEach(el=>{
+    const end=num(el.dataset.count),isMoney=el.dataset.kind==='money',final=el.textContent,t0=performance.now(),dur=900;
+    if(!(end>0))return;
+    const step=t=>{const k=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-k,3),v=end*e;if(!el.isConnected)return;el.textContent=k<1?(isMoney?money(v):String(Math.round(v))):final;if(k<1)requestAnimationFrame(step)};
+    requestAnimationFrame(step);
+  });
+}
 function render(){
   renderNav();
   const v=view();
@@ -1375,7 +1413,9 @@ function render(){
   if(v==='scan'&&(scan.step==='review')&&lastView==='scan'&&document.getElementById('dLines')){refreshCmp();return}
   const fn={home:vHome,import:vImport,suppliers:vSuppliers,supplier:vSupplier,compare:vCompare,scan:vScan,alerts:vAlerts,invoices:vInvoices,settings:vSettings}[v];
   const active=document.activeElement,aid=active&&active.id,pos=aid&&active.selectionStart;
+  const mainEl=$('#main'),firstShow=ANIMV!==v&&(S.loaded.prod||S.noDb||v!=='home');if(!firstShow)mainEl.classList.remove('anim-in','anim-page');
   $('#main').innerHTML=(v==='home'?'':alertBar(v))+fn()+`<datalist id="prodNames">${[...new Set(S.prod.map(p=>p.name))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
+  if(firstShow){ANIMV=v;mainEl.classList.remove('anim-in','anim-page');void mainEl.offsetWidth;if(!REDUCED){mainEl.classList.add(v==='home'?'anim-in':'anim-page');if(v==='home')countUp(mainEl)}}
   if(aid){const el=document.getElementById(aid);if(el&&el!==document.body){el.focus();try{if(pos!=null)el.setSelectionRange(pos,pos)}catch(e){}}}
   lastView=v;
 }
